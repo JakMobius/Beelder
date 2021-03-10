@@ -1,6 +1,6 @@
 {
   "name": "beelder",
-  "version": "0.0.1",
+  "version": "0.0.3",
   "description": "TypeScript build system designed for browser games with a client-server architecture",
   "main": "bin/beelder/index.js",
   "scripts": {},
@@ -24,5 +24,8 @@
     "@types/browserify": "^12.0.36",
     "@types/exorcist": "^0.4.6",
     "@types/node": "^14.14.25"
+  },
+  "bin": {
+    "beelder": "bin/beelder/cli.js"
   }
 }

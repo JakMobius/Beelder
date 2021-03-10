@@ -5,6 +5,8 @@ const exorcist = require('exorcist')
 const fs = require('fs')
 const path = require('path')
 
+fs.copyFileSync("./cli.js", "../bin/beelder/cli.js")
+
 const compiler = browserify({
     paths: [__dirname],
     extensions: ['.ts'],
@@ -19,7 +21,7 @@ const babel = babelify.configure({
         ["@babel/plugin-proposal-class-properties", { loose: true }],
         ["@babel/plugin-transform-typescript"],
         ["@babel/plugin-transform-runtime"],
-        ["@babel/plugin-proposal-export-default-from"]
+        ["@babel/plugin-proposal-export-default-from"],
     ],
     "presets": [
         ['@babel/preset-env', {

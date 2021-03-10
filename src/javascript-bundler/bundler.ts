@@ -4,7 +4,8 @@ import Babelify from 'babelify'
 import incremental from "browserify-incremental"
 import browserify from "browserify"
 import exorcist from "exorcist"
-import StreamToFile from "./stream-to-file";
+import {prepareFilePath} from "../utils";
+import * as fs from "fs";
 
 export interface BundlerConfig {
     source: string;
@@ -97,12 +98,12 @@ export default class Bundler {
 
         this.emitPluginEvent("beforebuild");
 
-        let errorCount = await this.listen(this.browserify.bundle())
+        let wasError = await this.listen(this.browserify.bundle())
 
         this.emitPluginEvent("afterbuild");
 
-        if(errorCount) {
-            throw new Error("Build finished with " + errorCount + " error(s)")
+        if(wasError) {
+            throw new Error("Build finished with errors")
         }
 
     }
@@ -118,13 +119,26 @@ export default class Bundler {
         return result;
     }
 
-    private listen(stream: NodeJS.ReadableStream): Promise<number> {
-        stream = stream.pipe(this.getExorcist())
+    private listen(stream: NodeJS.ReadableStream): Promise<boolean> {
+        return new Promise<boolean>((resolve) => {
+            let errorHandler = (error: any) => {
+                console.error(error.message)
+                if(error.annotated) console.error(error.annotated)
+                resolve(true)
+            }
 
-        return new StreamToFile(stream, this.config.destination).on("error", (error) => {
-            console.error(error.message)
-            if(error.annotated) console.error(error.annotated)
-        }).waitUntilComplete()
+            if(!prepareFilePath(this.config.destination)) {
+                errorHandler(new Error("Cannot create parent directories for '" + this.config.destination + "'"))
+            } else {
+                stream.on("error", errorHandler)
+                stream = stream.pipe(this.getExorcist())
+                stream.on("error", errorHandler)
+                let writeStream = fs.createWriteStream(this.config.destination)
+                stream.pipe(writeStream)
+                writeStream.on("error", errorHandler)
+                writeStream.on("finish", resolve)
+            }
+        })
     }
 
     private getExorcist() {

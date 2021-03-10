@@ -15,4 +15,7 @@ module.exports = beelder.runScheme("build").then(() => {
     if(passed) console.log(Chalk.green.bold("Test passed"))
     else console.error(Chalk.red.bold("Test failed"))
     return passed
+}).catch(() => {
+    console.error(Chalk.red.bold("Test failed"))
+    return false
 })

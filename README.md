@@ -52,20 +52,17 @@ How'd you make a game bundle out of sources?
   
 ## Creating example project
 
-Since Beelder is not yet published to NPM, you should manually
-clone the repo and install it in your project folder:
+First, install Beelder package from NPM.
+
 ```shell
-git clone https://github.com/JakMobius/Beelder
-cd Beelder
-npm install
-cd ..
+npm install beelder -g
 ```
 
 Create `src/index.ts` file with following content:
     
 ```typescript
 class Hello {
-    public static sayHello(who: string): void {
+    static sayHello(who: string): void {
         console.log("Hello, " + who)
     }
 }
@@ -73,7 +70,7 @@ class Hello {
 Hello.sayHello("world")
 ```
 
-So we should only have one build scheme which will bundle this code
+So there should only be one build scheme which will bundle this code
 into single JS file
 
 In order to build a project, the Beelder must know its structure.
@@ -106,13 +103,13 @@ To build your project, do one of the following:
 
 - Enter CLI command:
     ```shell
-    node ./Beelder/bin/beelder build-project
+    beelder build-project
     ```
   
 - Create `build.js` file with following content:
     ```js
-    const Beelder = require("./Beelder/bin/beelder")     // Loading the Beelder module
-    const buildSchemes = require("./build-schemes.json") // Loading the project descriptor 
+    const Beelder = require("./Beelder/bin/beelder").Beelder // Loading the Beelder module
+    const buildSchemes = require("./build-schemes.json")     // Loading the project descriptor 
     
     // Beelder constructor parameters are:
     // 1) Project descriptor JSON
@@ -124,6 +121,6 @@ To build your project, do one of the following:
   Then run it with `node build.js` command.
 
 When it's done, the `dist` folder should appear. Check for `index.js`
-file - it's your bundled script. Otherwise, check for errors in console.
+file - it's your bundled script. Otherwise, check for wasError in console.
 
 #### Todo: complete readme
