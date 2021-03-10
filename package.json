@@ -1,12 +1,10 @@
 {
   "name": "beelder",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
-  "scripts": {
-    "release": "tsc src/index.ts --outDir bin/beelder --module commonjs --target ES2018"
-  },
-  "author": "",
+  "version": "0.0.1",
+  "description": "TypeScript build system designed for browser games with a client-server architecture",
+  "main": "bin/beelder/index.js",
+  "scripts": {},
+  "author": "jakmobius",
   "license": "ISC",
   "dependencies": {
     "@babel/plugin-proposal-export-default-from": "^7.12.13",
