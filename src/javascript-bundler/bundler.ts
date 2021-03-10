@@ -109,7 +109,14 @@ export default class Bundler {
     }
 
     private getBabelPluginList(): any[] {
-        let result: any[] = []
+
+        // Default plugin list
+        let result: any[] = [
+            ["@babel/plugin-syntax-class-properties"],
+            ["@babel/plugin-proposal-class-properties", { loose: true }],
+            ["@babel/plugin-transform-typescript"],
+            ["@babel/plugin-transform-runtime"],
+        ]
 
         for (let plugin of this.plugins) {
             let babelPlugins = plugin.getBabelPlugins()

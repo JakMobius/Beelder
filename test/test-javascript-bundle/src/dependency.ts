@@ -1,6 +1,6 @@
 
 export class Dependency {
-    yell() {
+    yell(): void {
         throw "ouch!"
     }
 }

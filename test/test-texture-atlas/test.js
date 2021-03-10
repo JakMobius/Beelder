@@ -1,5 +1,5 @@
 
-const Beelder = require("../../bin/beelder").default
+const Beelder = require("../../bin/beelder").Beelder
 const schemes = require("./build-schemes.json")
 const Chalk = require("chalk");
 
