@@ -1,0 +1,15 @@
+{
+	"schemes": {
+		"build": { "steps": [
+			{
+				"action": "texture-atlas",
+				"source": "src/textures",
+				"target": {
+					"path": "cache/textures/",
+					"targetName": "texture-atlas"
+				},
+				"atlasSize": 2048
+			}
+		]}
+	}
+}

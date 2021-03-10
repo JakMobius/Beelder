@@ -1,0 +1,37 @@
+{
+	"schemes": {
+		"build-scripts": { "steps": [
+			{
+				"action": "bundle-javascript",
+				"source": "src/index.ts",
+				"target": {
+					"path": "cache/scripts/index.js",
+					"targetName": "scripts"
+				}
+			}
+		]},
+		"create-texture-map": { "steps": [
+			{
+				"action": "texture-atlas",
+				"source": "src/textures",
+				"target": {
+					"path": "cache/textures/",
+					"targetName": "texture-atlas"
+				},
+				"atlasSize": 2048
+			}
+		]},
+		"build": { "steps": [
+			{
+				"action": "copy",
+				"source": { "targetName": "scripts" },
+				"target": "dist"
+			},
+			{
+				"action": "copy",
+				"source": { "targetName": "texture-atlas" },
+				"target": "dist/textures"
+			}
+		]}
+	}
+}

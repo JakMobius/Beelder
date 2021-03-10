@@ -1,0 +1,34 @@
+{
+	"schemes": {
+		"build": { "steps": [
+			{
+				"action": "copy",
+				"source": { "targetName": "index-2" },
+				"target": "dist/"
+			},
+			{
+				"action": "bundle-javascript",
+				"source": "src/index-1.ts",
+				"target": {
+					"path": "cache/scripts/index-1.js",
+					"targetName": "index-1"
+				}
+			}
+		]},
+		"build-2": { "steps": [
+			{
+				"action": "copy",
+				"source": { "targetName": "index-1" },
+				"target": "dist/"
+			},
+			{
+				"action": "bundle-javascript",
+				"source": "src/index-2.ts",
+				"target": {
+					"path": "cache/scripts/index-2.js",
+					"targetName": "index-2"
+				}
+			}
+		]}
+	}
+}

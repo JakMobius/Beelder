@@ -1,0 +1,14 @@
+{"schemes": {
+	"build": {
+		"steps": [
+			{
+				"action": "bundle-javascript",
+				"source": "src/index.ts",
+				"target": {
+					"path": "dist/index.js",
+					"targetName": "program"
+				}
+			}
+		]
+	}
+}}
