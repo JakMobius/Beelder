@@ -1,4 +1,10 @@
 
+/*
+ * Depending schemes test
+ *
+ * This test aims to check the dependency resolution system.
+ */
+
 const Beelder = require("../../bin/beelder").Beelder
 const schemes = require("./build-schemes.json")
 const Chalk = require("chalk");

@@ -2,6 +2,7 @@ import {BeelderActionConfig} from "./beelder";
 import BeelderScheme from "./scheme";
 import BeelderReference from "./reference";
 
+
 export default class BeelderAction {
 
     static readonly actionName: string;
@@ -22,4 +23,5 @@ export default class BeelderAction {
     public async run() {
 
     }
+
 }

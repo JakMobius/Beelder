@@ -74,7 +74,7 @@ So there should only be one build scheme which will bundle this code
 into single JS file
 
 In order to build a project, the Beelder must know its structure.
-Create `beelder-schemes.json` file with following content:
+Create `build-schemes.json` file with following content:
    
 ```json
 {
@@ -121,6 +121,6 @@ To build your project, do one of the following:
   Then run it with `node build.js` command.
 
 When it's done, the `dist` folder should appear. Check for `index.js`
-file - it's your bundled script. Otherwise, check for wasError in console.
+file - it's your bundled script. Otherwise, check for errors in console.
 
 #### Todo: complete readme

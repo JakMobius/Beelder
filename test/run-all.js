@@ -26,7 +26,12 @@ async function runTests() {
         Timings.muteSubtasks()
 
         testsTotal++
-        const result = await require(fullPath)
+        let result = null
+        try {
+            result = await require(fullPath)
+        } catch(error) {
+            result = error
+        }
 
         if(result instanceof Error) {
             Timings.unmuteSubtasks()

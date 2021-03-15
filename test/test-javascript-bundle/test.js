@@ -1,4 +1,12 @@
 
+/*
+ * Javascript Bundler test
+ *
+ * This test aims to check if Beelder is calling Babel
+ * and creates correct executable bundle which can be
+ * invoked from pure node.js environment
+ */
+
 const Beelder = require("../../bin/beelder").Beelder
 const schemes = require("./build-schemes.json")
 const Chalk = require("chalk")

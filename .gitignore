@@ -48,3 +48,5 @@ typings/
 # Custom
 .idea
 *.DS_Store
+test/*/cache
+test/*/beelder-cache

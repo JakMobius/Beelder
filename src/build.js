@@ -38,16 +38,19 @@ compiler.transform(babel)
 compiler.require("index.ts")
 
 let external = [
-    "babelify",
-    "browserify",
-    "chalk",
-    "exorcist",
-    "source-map-support",
-    "typescript",
     "util",
     "events",
     "fs",
-    "path"
+    "path",
+    "atlaspack",
+    "babelify",
+    "browserify",
+    "browserify-incremental",
+    "canvas",
+    "chalk",
+    "exorcist",
+    "source-map-support",
+    "typescript"
 ]
 
 for(let module of external) {

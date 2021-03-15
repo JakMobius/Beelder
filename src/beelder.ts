@@ -7,6 +7,7 @@ import Timings from "./timings";
 import BeelderReference from "./reference";
 import path from "path";
 import Chalk from "chalk"
+import BuildCache from "./build-cache";
 
 export interface BeelderActionConfig {
     action: string
@@ -27,12 +28,14 @@ export default class Beelder {
     public referenceMap: Map<string, BeelderReference> = new Map()
     public readonly projectRoot: string;
     public readonly cacheDirectory: string;
+    public cache: BuildCache;
 
     constructor(config: BeelderConfig, projectRoot?: string) {
         this.config = config
 
         this.projectRoot = projectRoot ?? '/'
         this.cacheDirectory = path.resolve(this.projectRoot, config.cacheDirectory ?? "beelder-cache")
+        this.cache = new BuildCache(this.cacheDirectory)
 
         this.loadSchemes()
     }

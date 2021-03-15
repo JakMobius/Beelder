@@ -1,4 +1,11 @@
 
+/*
+ * Depending schemes test
+ *
+ * This test checks if the dependency resolve system
+ * finds and reports cyclic dependencies properly.
+ */
+
 const Beelder = require("../../bin/beelder").Beelder
 const schemes = require("./build-schemes.json")
 const Chalk = require("chalk")

@@ -4,7 +4,7 @@ import Babelify from 'babelify'
 import incremental from "browserify-incremental"
 import browserify from "browserify"
 import exorcist from "exorcist"
-import {prepareFilePath} from "../utils";
+import {prepareFileLocation} from "../utils";
 import * as fs from "fs";
 
 export interface BundlerConfig {
@@ -134,7 +134,7 @@ export default class Bundler {
                 resolve(true)
             }
 
-            if(!prepareFilePath(this.config.destination)) {
+            if(!prepareFileLocation(this.config.destination)) {
                 errorHandler(new Error("Cannot create parent directories for '" + this.config.destination + "'"))
             } else {
                 stream.on("error", errorHandler)

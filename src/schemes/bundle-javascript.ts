@@ -11,7 +11,7 @@ export interface BundleJavascriptActionConfig extends BaseActionConfig {
 export default class BundleJavascriptAction extends BaseAction {
 
     static readonly actionName: string = "bundle-javascript"
-    private compilerOptions: any;
+    readonly compilerOptions: any;
 
     constructor(config: BundleJavascriptActionConfig, scheme: BeelderScheme) {
         super(config, scheme);
@@ -27,7 +27,7 @@ export default class BundleJavascriptAction extends BaseAction {
         let compilerOptions = {
             source: source,
             destination: destination,
-            cacheFile: this.scheme.beelder.getAbsolutePath("beelder-cache/browserify-cache.json"),
+            cacheFile: this.cache.cacheFilePath,
             projectRoot: this.scheme.beelder.projectRoot
         }
 

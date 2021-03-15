@@ -1,6 +1,6 @@
 {
   "name": "beelder",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "description": "TypeScript build system designed for browser games with a client-server architecture",
   "main": "bin/beelder/index.js",
   "scripts": {},
@@ -11,9 +11,11 @@
     "@babel/plugin-transform-runtime": "^7.12.15",
     "@babel/plugin-transform-typescript": "^7.12.16",
     "@babel/preset-env": "^7.12.16",
+    "atlaspack": "^1.0.0",
     "babelify": "^10.0.0",
     "browserify": "^17.0.0",
     "browserify-incremental": "^3.1.1",
+    "canvas": "^2.7.0",
     "chalk": "^4.1.0",
     "exorcist": "^2.0.0",
     "source-map-support": "^0.5.19",
@@ -27,5 +29,6 @@
   },
   "bin": {
     "beelder": "bin/beelder/cli.js"
-  }
+  },
+  "repository": "https://github.com/JakMobius/Beelder"
 }
