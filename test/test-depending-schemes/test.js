@@ -13,7 +13,7 @@ let beelder = new Beelder(schemes, __dirname)
 module.exports = beelder.runScheme("build").then(() => {
     console.log(Chalk.green.bold("Test passed"))
 }).catch((error) => {
-    console.error(Chalk.green.bold("Test failed"))
+    console.error(Chalk.red.bold("Test failed"))
     return error
 })
 

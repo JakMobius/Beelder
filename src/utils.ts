@@ -72,3 +72,27 @@ export function compareArrayValues(arr1: any[], arr2: any[]): boolean {
 
     return true
 }
+
+export async function copyDirectoryContents(from: string, to: string) {
+    try {
+        await fs.promises.mkdir(to);
+    } catch (e) {}
+
+    for (let element of await fs.promises.readdir(from)) {
+        const stat = await fs.promises.lstat(path.join(from, element));
+        if (stat.isFile()) {
+            await fs.promises.copyFile(path.join(from, element), path.join(to, element));
+        } else if (stat.isSymbolicLink()) {
+            await fs.promises.symlink(await fs.promises.readlink(path.join(from, element)), path.join(to, element));
+        } else if (stat.isDirectory()) {
+            await this.copyDirectoryContents(path.join(from, element), path.join(to, element));
+        }
+    }
+}
+
+export async function copyDirectory(from: string, to: string) {
+    if (to.endsWith("/")) {
+        to = path.join(to, path.basename(from))
+    }
+    await copyDirectoryContents(from, to)
+}

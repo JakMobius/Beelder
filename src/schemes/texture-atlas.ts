@@ -198,12 +198,12 @@ export default class TextureAtlasAction extends BaseAction {
 
     async run(): Promise<any> {
 
-        let source = path.join(this.scheme.beelder.projectRoot, this.source.getPath())
+        let source = this.scheme.beelder.resolveReference(this.source)
         let destination = this.scheme.beelder.resolveReference(this.target)
 
         if(!prepareDirectory(destination)) throw new Error("Unable to create destination folder")
 
-        Timings.begin("Creating texture atlases of " + Chalk.blueBright(this.config.source))
+        Timings.begin("Creating texture atlases of " + this.source.getConsoleName())
 
         let cacheJSON = await this.cache.getJSON() as TextureAtlasActionCache
 

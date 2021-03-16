@@ -26,6 +26,7 @@ coverage
 # nyc test coverage
 .nyc_output
 
+
 # Dependency directories
 node_modules/
 jspm_packages/
@@ -48,5 +49,5 @@ typings/
 # Custom
 .idea
 *.DS_Store
-test/*/cache
-test/*/beelder-cache
+test/*/cache/*
+test/*/beelder-cache/*

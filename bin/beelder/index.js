@@ -278,7 +278,7 @@ class Beelder {
       referencePath = reference.path;
     }
 
-    referencePath = _path.default.resolve(this.projectRoot, referencePath);
+    referencePath = _path.default.join(this.projectRoot, referencePath);
     return referencePath;
   }
 
@@ -760,9 +760,47 @@ exports.default = void 0;
 
 var _baseScheme = _interopRequireDefault(require("../base-scheme"));
 
+var _path = _interopRequireDefault(require("path"));
+
+var _utils = require("../utils");
+
+var _fs = _interopRequireDefault(require("fs"));
+
+var _timings = _interopRequireDefault(require("../timings"));
+
 class CopyAction extends _baseScheme.default {
   constructor(config, scheme) {
     super(config, scheme);
+  }
+
+  async run() {
+    _timings.default.begin("Copying " + this.source.getConsoleName() + " to " + this.target.getConsoleName());
+
+    let source = this.scheme.beelder.resolveReference(this.source);
+    let destination = this.scheme.beelder.resolveReference(this.target);
+    let sourceStat = await _fs.default.promises.stat(source);
+    let dirname;
+
+    if (destination.endsWith("/")) {
+      // Copying something in directory, adding filename explicitly
+      dirname = destination;
+      destination = _path.default.join(destination, _path.default.basename(source));
+    } else {
+      // Copying file on exact new location
+      dirname = _path.default.dirname(destination);
+    }
+
+    if (!(await (0, _utils.prepareDirectory)(dirname))) {
+      throw new Error("Could not create destination directory");
+    }
+
+    if (sourceStat.isDirectory()) {
+      await (0, _utils.copyDirectory)(source, destination);
+    } else {
+      await _fs.default.promises.copyFile(source, destination);
+    }
+
+    _timings.default.end();
   }
 
 }
@@ -770,7 +808,7 @@ class CopyAction extends _baseScheme.default {
 exports.default = CopyAction;
 CopyAction.actionName = "copy";
 
-},{"../base-scheme":5,"@babel/runtime/helpers/interopRequireDefault":1}],13:[function(require,module,exports){
+},{"../base-scheme":5,"../timings":14,"../utils":15,"@babel/runtime/helpers/interopRequireDefault":1,"fs":"fs","path":"path"}],13:[function(require,module,exports){
 "use strict";
 
 var _interopRequireDefault = require("@babel/runtime/helpers/interopRequireDefault");
@@ -791,8 +829,6 @@ var _fs = _interopRequireDefault(require("fs"));
 var _path = _interopRequireDefault(require("path"));
 
 var _timings = _interopRequireDefault(require("../timings"));
-
-var _chalk = _interopRequireDefault(require("chalk"));
 
 var _utils = require("../utils");
 
@@ -958,12 +994,11 @@ class TextureAtlasAction extends _baseScheme.default {
   }
 
   async run() {
-    let source = _path.default.join(this.scheme.beelder.projectRoot, this.source.getPath());
-
+    let source = this.scheme.beelder.resolveReference(this.source);
     let destination = this.scheme.beelder.resolveReference(this.target);
     if (!(0, _utils.prepareDirectory)(destination)) throw new Error("Unable to create destination folder");
 
-    _timings.default.begin("Creating texture atlases of " + _chalk.default.blueBright(this.config.source));
+    _timings.default.begin("Creating texture atlases of " + this.source.getConsoleName());
 
     let cacheJSON = await this.cache.getJSON();
     let context = new AtlasCreationSession(source, this.config.atlasSize);
@@ -1025,7 +1060,7 @@ class TextureAtlasAction extends _baseScheme.default {
 exports.default = TextureAtlasAction;
 TextureAtlasAction.actionName = "texture-atlas";
 
-},{"../base-scheme":5,"../build-cache":7,"../timings":14,"../utils":15,"@babel/runtime/helpers/interopRequireDefault":1,"atlaspack":"atlaspack","canvas":"canvas","chalk":"chalk","fs":"fs","path":"path"}],14:[function(require,module,exports){
+},{"../base-scheme":5,"../build-cache":7,"../timings":14,"../utils":15,"@babel/runtime/helpers/interopRequireDefault":1,"atlaspack":"atlaspack","canvas":"canvas","fs":"fs","path":"path"}],14:[function(require,module,exports){
 "use strict";
 
 var _interopRequireDefault = require("@babel/runtime/helpers/interopRequireDefault");
@@ -1210,6 +1245,8 @@ exports.trimExtension = trimExtension;
 exports.prepareDirectory = prepareDirectory;
 exports.prepareFileLocation = prepareFileLocation;
 exports.compareArrayValues = compareArrayValues;
+exports.copyDirectoryContents = copyDirectoryContents;
+exports.copyDirectory = copyDirectory;
 
 var _fs = _interopRequireDefault(require("fs"));
 
@@ -1289,6 +1326,32 @@ function compareArrayValues(arr1, arr2) {
   }
 
   return true;
+}
+
+async function copyDirectoryContents(from, to) {
+  try {
+    await _fs.default.promises.mkdir(to);
+  } catch (e) {}
+
+  for (let element of await _fs.default.promises.readdir(from)) {
+    const stat = await _fs.default.promises.lstat(_path.default.join(from, element));
+
+    if (stat.isFile()) {
+      await _fs.default.promises.copyFile(_path.default.join(from, element), _path.default.join(to, element));
+    } else if (stat.isSymbolicLink()) {
+      await _fs.default.promises.symlink(await _fs.default.promises.readlink(_path.default.join(from, element)), _path.default.join(to, element));
+    } else if (stat.isDirectory()) {
+      await this.copyDirectoryContents(_path.default.join(from, element), _path.default.join(to, element));
+    }
+  }
+}
+
+async function copyDirectory(from, to) {
+  if (to.endsWith("/")) {
+    to = _path.default.join(to, _path.default.basename(from));
+  }
+
+  await copyDirectoryContents(from, to);
 }
 
 },{"@babel/runtime/helpers/interopRequireDefault":1,"fs":"fs","path":"path"}],"index.ts":[function(require,module,exports){

@@ -25,12 +25,12 @@
 			{
 				"action": "copy",
 				"source": { "targetName": "scripts" },
-				"target": "dist"
+				"target": "dist/"
 			},
 			{
 				"action": "copy",
 				"source": { "targetName": "texture-atlas" },
-				"target": "dist/textures"
+				"target": "dist/"
 			}
 		]}
 	}

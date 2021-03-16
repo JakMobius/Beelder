@@ -122,7 +122,7 @@ export default class Beelder {
             referencePath = reference.path
         }
 
-        referencePath = path.resolve(this.projectRoot, referencePath)
+        referencePath = path.join(this.projectRoot, referencePath)
 
         return referencePath
     }

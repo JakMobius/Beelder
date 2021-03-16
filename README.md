@@ -50,7 +50,7 @@ How'd you make a game bundle out of sources?
 - **Option 4: Use Beelder.** Instead of writing your own copy of Beelder,
   Why not use a ready-made solution?
   
-## Creating example project
+## Examples
 
 First, install Beelder package from NPM.
 
@@ -58,8 +58,16 @@ First, install Beelder package from NPM.
 npm install beelder -g
 ```
 
-Create `src/index.ts` file with following content:
-    
+### Building single TypeScript file with Beelder
+
+Project structure:
+```
+my_project
+├┬src
+│└──index.ts
+└─build-schemes.json
+```
+`src/index.ts`:
 ```typescript
 class Hello {
     static sayHello(who: string): void {
@@ -74,8 +82,9 @@ So there should only be one build scheme which will bundle this code
 into single JS file
 
 In order to build a project, the Beelder must know its structure.
-Create `build-schemes.json` file with following content:
-   
+This is what `build-schemes.json` file is purposed for
+
+`build-schemes.json`:
 ```json
 {
     "schemes": {
@@ -122,5 +131,265 @@ To build your project, do one of the following:
 
 When it's done, the `dist` folder should appear. Check for `index.js`
 file - it's your bundled script. Otherwise, check for errors in console.
+
+### Building texture atlas out of textures with Beelder
+
+Project structure:
+```
+my_project
+├┬textures
+│└┬─texture_a.png
+│ └─texture_b.png
+└─build-schemes.json
+```
+
+`build-schemes.json`:
+```json
+{
+    "schemes": {
+        "build-project": {
+            "steps": [
+                {
+                    "action": "create-texture-atlas",
+                    "source": "textures",
+                    "target": "dist"
+                }
+            ]
+        }
+    }
+}
+```
+
+Beelder should create `dist` directory and put texture atlases (with
+mipmap levels) inside.
+
+**Note** Beelder will not recreate texture atlases if source directory
+was not modified. You should write the results in cache directory and
+copy them to the `dist` folder afterwards so that the project will build
+correctly if the `dist` folder is deleted.
+
+
+(TODO: make this action more adjustable)
+
+### Creating and building a complex projects
+
+Project structure:
+
+```
+my_project
+├┬src
+│└┬─index.ts
+│ └─some_depencency.ts
+├┬textures
+│└┬─texture_a.png
+│ └─texture_b.png
+└─build-schemes.json
+```
+
+`src/index.ts`:
+```ts
+import {Dependency} from "./dependency";
+
+new Dependency().yell()
+```
+
+`src/some_dependency.ts`:
+```ts
+export class Dependency {
+    yell() {
+        console.log("AAA")
+    }
+}
+```
+
+`textures/texture_a.png` and `textures/texture_b.png` are just usual
+images. Take them from your downloads folder, or take some screenshots.
+
+Also, in order to structure the assembly process, we divide the steps
+into different assembly diagrams. To find out how to automate the assembly
+of several schemes that depend on each other, see "Using targets"
+
+Create `build-schemes.json` file with following content:
+
+```json
+{
+  "schemes": {
+    "build-typescript": {
+      "steps": [
+        {
+          "action": "bundle-javascript",
+          "source": "src/index.ts",
+          "target": "cache/index.js"
+        }
+      ]
+    },
+    "build-texture-atlas": {
+      "steps": [
+        {
+          "action": "build-texture-atlas",
+          "source": "textures",
+          "target": "cache/textures"
+        }
+      ]
+    },
+    "build-project": {
+      "steps": [
+        {
+          "action": "copy",
+          "source": "cache/textures",
+          "target": "release/textures"
+        },
+        {
+          "action": "copy",
+          "source": "cache/index.js",
+          "target": "release/"
+        }
+      ]
+    }
+  }
+}
+```
+
+Although it may look scary, there is nothing complicated about this
+file.
+
+The above project configuration defines three build schemes:
+1)  The `build-typescript` scheme builds TypeScript code into 
+    `cache/index.js` file.
+
+2)  The `build-texture-atlas` scheme creates texture atlases and
+    put them in `cache/textures` directory
+    
+3)  The 'build-project' scheme copies compiled JavaScript and
+    textures into `release` folder.
+    
+Now, you should run `build-typescript`, `build-texture-atlas` and `build-project`
+to build your project.
+
+**Please note:** This approach is inconvenient because one should
+run three schemes manually to build the project. There are two possible
+workarounds:
+
+1) First way is to not separate the project assembly scheme. 
+   This approach makes it hard to keep your project scheme structured,
+   be as you will have to manually set the order of the assembly steps
+2) Second way is to use Beelder targets. 
+
+### Using targets
+
+Note that the project from the example above can be represented as a
+dependency graph. (as almost any project).
+
+```
+ ╭──────────────────╮   compiled javascript
+ │ build-typescript │ ───────────────────────╮
+ ╰──────────────────╯                       ╭───────────────╮
+                                            │ build-project │ ─── game
+ ╭─────────────────────╮   texture atlases  ╰───────────────╯
+ │ build-texture-atlas │ ────────────────────╯
+ ╰─────────────────────╯
+```
+
+Now there are labels for the results of each assembly scheme with names.
+They are called **targets**. Each target is associated with one or more
+file paths. From this diagram, it is clear in which order assembly
+schemes should be evaluated.
+
+**Note:** Target is linked to single build step, not to whole scheme, but
+when it's required to build some target, Beelder will execute the whole
+scheme.
+
+Here is how to define target:
+
+`context: build scheme "steps" array`
+```json
+[{
+  "action": "bundle-javascript",
+  "source": "...",
+  // The following line does not define target, only step destination path
+  "target": "cache/index.js"
+}, {
+  "action": "bundle-javascript",
+  "source": "...",
+  // The following lines defines target "compiled javascript", linked to "cache/index.js"
+  // You now will be able to refer to "targetName": "compiled javascript" in other build schemes 
+  "target": {
+    "path": "cache/index.js",
+    "targetName": "compiled javascript"
+  }
+}]    
+```
+
+Here is how to 'consume' target:
+
+`context: build scheme "steps" array`
+```json
+[{
+  "action": "copy",
+  // Old variant: 
+  // "source": "cache/index.js",
+  // New variant:
+  "source": {
+    "targetName": "compiled javascript"
+  },
+  "target": "..."
+}]    
+```
+
+Now this step won't be executed before one which define this target.
+
+The new `build-schemes.json` file for above example will now look like this:
+```json
+{
+  "schemes": {
+    "build-typescript": {
+      "steps": [
+        {
+          "action": "bundle-javascript",
+          "source": "src/index.ts",
+          "target": {
+            "targetName": "compiled javascript",
+            "path": "cache/index.js"
+          }
+        }
+      ]
+    },
+    "build-texture-atlas": {
+      "steps": [
+        {
+          "action": "build-texture-atlas",
+          "source": "textures",
+          "target": {
+            "targetName": "texture atlases",
+            "path": "cache/textures"
+          }
+        }
+      ]
+    },
+    "build-project": {
+      "steps": [
+        {
+          "action": "copy",
+          "source": {
+            "targetName": "texture atlases"
+          },
+          "target": "release/"
+        },
+        {
+          "action": "copy",
+          "source": {
+            "targetName": "compiled javascript"
+          },
+          "target": "release/"
+        }
+      ]
+    }
+  }
+}
+```
+
+**Note**: It is not recommended adding spaces in the target names, in this case
+this was done for clarity
+
 
 #### Todo: complete readme
