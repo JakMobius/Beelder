@@ -25,7 +25,9 @@ export default class BeelderScheme {
     private loadSteps() {
         for(let step of this.config.steps) {
             const ActionClass = Beelder.actions.get(step.action)
-            if(!ActionClass) throw new Error("No such action: '" + step.action + "'")
+            if(!ActionClass) {
+                throw new Error("No such action: '" + step.action + "'")
+            }
             const action = new ActionClass(step, this)
             this.steps.push(action)
         }

@@ -1,0 +1,30 @@
+{
+	"schemes": {
+		"build": { "steps": [
+			{
+				"comment": "This step should copy src/index.ts into dist/index.ts",
+				"action": "copy",
+				"source": "src/index.ts",
+				"target": "dist/"
+			},
+			{
+				"comment": "This step should copy src/index.ts into dist/index_renamed.ts",
+				"action": "copy",
+				"source": "src/index.ts",
+				"target": "dist/index-renamed.ts"
+			},
+			{
+				"comment": "This step should copy src/directory into dist/directory",
+				"action": "copy",
+				"source": "src/directory",
+				"target": "dist/"
+			},
+			{
+				"comment": "This step should copy src/directory into dist/directory_copy",
+				"action": "copy",
+				"source": "src/directory",
+				"target": "dist/directory-renamed"
+			}
+		]}
+	}
+}

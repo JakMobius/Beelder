@@ -51,3 +51,4 @@ typings/
 *.DS_Store
 test/*/cache/*
 test/*/beelder-cache/*
+test/*/dist/*

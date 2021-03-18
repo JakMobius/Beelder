@@ -4,11 +4,13 @@ TypeScript build system designed for browser games with a client-server architec
 #### Please, note that project is unfinished and is under heavy development now
 
 ## Why should I use Beelder?
-Let us imagine a game with lots and lots of resources: textures, sounds, UI stylesheets, models and so on.
-How'd you make a game bundle out of sources?
+
+What methods are available to assemble game sources (code, textures,
+stylesheets, models, ...) into a game bundle?
 
 - **Option 1: Build it manually.**
-  This is certainly the way to go, but no one does it.
+  This is certainly the way to go, but it does not apply to any large
+  projects. It is very inconvenient.
   
 
 - **Option 2: Use bash script.**
@@ -25,8 +27,8 @@ How'd you make a game bundle out of sources?
   as Babel can be configured to use the cache and rebuild only the
   files that have changed.
   
-  With custom script you can also automate other, not JS-related
-  parts of the build. For example, you can check if textures folder 
+  With custom script it becomes possible to also automate other, not JS-related
+  parts of the build. For example, it allows checking if textures folder 
   has been updated, and rebuild the texture atlas as required. 
   
   The bad side of such approach is that the build script eventually
@@ -39,11 +41,11 @@ How'd you make a game bundle out of sources?
 
   It will also soon become obvious that file paths are awkward to write
   in code. The obvious solution is to put all the file paths in a
-  separate file, where you can visually divide the build process into
-  steps and comment on each one.
+  separate file, where the build process could be visually divided into
+  steps and each one may me commented on.
 
   Gradually, the build system becomes a whole separate project with
-  thousands and thousands of lines of code. This is how Beelder was
+  thousands and thousands of lines of code. This is exactly how Beelder was
   created.
   
 
@@ -164,14 +166,14 @@ Beelder should create `dist` directory and put texture atlases (with
 mipmap levels) inside.
 
 **Note** Beelder will not recreate texture atlases if source directory
-was not modified. You should write the results in cache directory and
-copy them to the `dist` folder afterwards so that the project will build
-correctly if the `dist` folder is deleted.
+was not modified. So, it's necessary to write atlases in cache directory
+and then copy them to the `dist` so that the project will build
+correctly if the `dist` folder was deleted.
 
 
 (TODO: make this action more adjustable)
 
-### Creating and building a complex projects
+### Creating and building complex projects
 
 Project structure:
 
@@ -302,7 +304,7 @@ scheme.
 Here is how to define target:
 
 `context: build scheme "steps" array`
-```json
+```json5
 [{
   "action": "bundle-javascript",
   "source": "...",
@@ -323,7 +325,7 @@ Here is how to define target:
 Here is how to 'consume' target:
 
 `context: build scheme "steps" array`
-```json
+```json5
 [{
   "action": "copy",
   // Old variant: 

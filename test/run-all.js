@@ -4,10 +4,13 @@ const path = require("path")
 const Timings = require("../bin/beelder/index").Timings
 const Chalk = require("chalk")
 
-async function runTests() {
-    Timings.begin(Chalk.bold.blue("Running tests"))
+function unlinkDirectory(path) {
+    if(fs.existsSync(path)) {
+        fs.rmdirSync(path, { recursive: true })
+    }
+}
 
-    const files = fs.readdirSync(__dirname)
+async function runTests(files) {
     const state = Timings.getStackState()
 
     let testsPassed = 0
@@ -35,7 +38,7 @@ async function runTests() {
 
         if(result instanceof Error) {
             Timings.unmuteSubtasks()
-            console.error(result)
+            console.error(result.message)
             Timings.setStackState(state, Chalk.red.bold("Test " + testName + " failed"))
         } else if(result === false) {
             Timings.unmuteSubtasks()
@@ -46,8 +49,26 @@ async function runTests() {
         }
     }
 
-
-    Timings.end(Chalk.blue.bold("Passed " + testsPassed + " of " + testsTotal + " tests"))
+    return {
+        passed: testsPassed,
+        failed: testsFailed
+    }
 }
 
-runTests()
+async function prepareAndRunTests() {
+    const files = fs.readdirSync(__dirname)
+
+    Timings.begin(Chalk.bold.blue("Cleaning test caches"))
+    for(let file of files) {
+        let fullPath = path.join(__dirname, file);
+        unlinkDirectory(path.join(fullPath, "cache"));
+        unlinkDirectory(path.join(fullPath, "beelder-cache"));
+    }
+    Timings.end()
+
+    Timings.begin(Chalk.bold.blue("Running tests"))
+    let testsResult = await runTests(files);
+    Timings.end(Chalk.blue.bold("Passed " + testsResult.passed + " of " + testsResult.total + " tests"))
+}
+
+prepareAndRunTests()
