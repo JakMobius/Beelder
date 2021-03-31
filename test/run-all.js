@@ -23,6 +23,8 @@ async function runTests(files) {
         fullPath = path.join(fullPath, "test.js")
         if(!fs.existsSync(fullPath)) continue;
 
+        process.chdir(path.join(__dirname, file))
+
         const testName = Chalk.white("'") + Chalk.magenta(file) + Chalk.white("'")
 
         Timings.begin("Running " + testName);
@@ -38,8 +40,8 @@ async function runTests(files) {
 
         if(result instanceof Error) {
             Timings.unmuteSubtasks()
-            console.error(result.message)
-            Timings.setStackState(state, Chalk.red.bold("Test " + testName + " failed"))
+            console.error(result)
+            Timings.setStackState(state, Chalk.red.bold("Test " + testName + " failed: " + result.message))
         } else if(result === false) {
             Timings.unmuteSubtasks()
             Timings.setStackState(state, Chalk.red.bold("Test " + testName + " failed"))
@@ -51,7 +53,7 @@ async function runTests(files) {
 
     return {
         passed: testsPassed,
-        failed: testsFailed
+        total: testsTotal
     }
 }
 
@@ -71,4 +73,4 @@ async function prepareAndRunTests() {
     Timings.end(Chalk.blue.bold("Passed " + testsResult.passed + " of " + testsResult.total + " tests"))
 }
 
-prepareAndRunTests()
+prepareAndRunTests().then(() => {})

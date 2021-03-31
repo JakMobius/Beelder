@@ -8,6 +8,7 @@ import BeelderReference from "./reference";
 import path from "path";
 import Chalk from "chalk"
 import BuildCache from "./build-cache";
+import AsyncEventEmitter from "./async-event-emitter";
 
 export interface BeelderActionConfig {
     action: string

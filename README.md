@@ -119,8 +119,18 @@ To build your project, do one of the following:
   
 - Create `build.js` file with following content:
     ```js
-    const Beelder = require("./Beelder/bin/beelder").Beelder // Loading the Beelder module
-    const buildSchemes = require("./build-schemes.json")     // Loading the project descriptor 
+    // Loading the Beelder module
+    const Beelder = require("./Beelder/bin/beelder").Beelder
+    
+    // Loading the project descriptor
+    const buildSchemes = require("./build-schemes.json")
+    
+    // JSON5 Module is used in order to allow
+    // comments in your build-schemes.json file
+    // JSON.parse may be used as well, but this
+    // way you may not use comments in your
+    // schemes file
+    const json5 = require("json5") 
     
     // Beelder constructor parameters are:
     // 1) Project descriptor JSON
@@ -146,7 +156,7 @@ my_project
 ```
 
 `build-schemes.json`:
-```json
+```json5
 {
     "schemes": {
         "build-project": {
@@ -213,7 +223,7 @@ of several schemes that depend on each other, see "Using targets"
 
 Create `build-schemes.json` file with following content:
 
-```json
+```json5
 {
   "schemes": {
     "build-typescript": {
@@ -341,9 +351,10 @@ Here is how to 'consume' target:
 Now this step won't be executed before one which define this target.
 
 The new `build-schemes.json` file for above example will now look like this:
-```json
+```json5
 {
   "schemes": {
+    // A scheme for building typescript
     "build-typescript": {
       "steps": [
         {
@@ -356,6 +367,7 @@ The new `build-schemes.json` file for above example will now look like this:
         }
       ]
     },
+    // A scheme for building the texture atlas
     "build-texture-atlas": {
       "steps": [
         {
@@ -368,9 +380,11 @@ The new `build-schemes.json` file for above example will now look like this:
         }
       ]
     },
+    // A scheme to copy all temporary files to build folder
     "build-project": {
       "steps": [
         {
+          // Copying texture atlases to build folder
           "action": "copy",
           "source": {
             "targetName": "texture atlases"
@@ -378,6 +392,7 @@ The new `build-schemes.json` file for above example will now look like this:
           "target": "release/"
         },
         {
+          // Copying compiled javascript to build folder
           "action": "copy",
           "source": {
             "targetName": "compiled javascript"

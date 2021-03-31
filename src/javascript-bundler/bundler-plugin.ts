@@ -1,19 +1,20 @@
 import Bundler from "./bundler";
 import EventEmitter from "events";
-import Babelify from "babelify";
 
-export default class Plugin extends EventEmitter {
+export interface BundlerPluginConfig {
+    plugin: string
+}
+
+export default class BundlerPlugin extends EventEmitter {
 
     public bundler?: Bundler = null
 
-    constructor() {
+    constructor(config: BundlerPluginConfig) {
         super()
-
-
     }
 
     setCompiler(bundler: Bundler) {
-
+        this.bundler = bundler
     }
 
     getBabelPlugins(): any[] | null {
@@ -22,5 +23,9 @@ export default class Plugin extends EventEmitter {
 
     getBrowserifyPlugins(): any[] | null {
         return null
+    }
+
+    static getPluginName(): string {
+        return "invalid"
     }
 }

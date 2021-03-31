@@ -14,7 +14,7 @@ export default class BaseAction extends Action {
 
     target: BeelderReference;
     source: BeelderReference;
-    protected cache: BuildCache;
+    cache: BuildCache;
 
     constructor(config: BaseActionConfig, scheme: BeelderScheme) {
         super(config, scheme);

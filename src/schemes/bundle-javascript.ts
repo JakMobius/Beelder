@@ -28,7 +28,8 @@ export default class BundleJavascriptAction extends BaseAction {
             source: source,
             destination: destination,
             cacheFile: this.cache.cacheFilePath,
-            projectRoot: this.scheme.beelder.projectRoot
+            projectRoot: this.scheme.beelder.projectRoot,
+            buildAction: this
         }
 
         if (this.compilerOptions) {

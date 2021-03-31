@@ -73,6 +73,7 @@ export default class BuildCache {
     }
 
     static refreshFileData(cache: FileListCache, fileName: string): void
+    static refreshFileData(cache: FileListCache, fileName: string, data: any): void
     static refreshFileData(cache: FileListCache, fileName: string, data?: any) {
         let cacheEntry = cache[fileName]
         if (cacheEntry) {

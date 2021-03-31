@@ -1,4 +1,4 @@
-import Plugin from "./plugin"
+import BundlerPlugin from "./bundler-plugin"
 import Babelify from 'babelify'
 // @ts-ignore
 import incremental from "browserify-incremental"
@@ -6,6 +6,11 @@ import browserify from "browserify"
 import exorcist from "exorcist"
 import {prepareFileLocation} from "../utils";
 import * as fs from "fs";
+import {BundlerPluginConfig} from "./bundler-plugin";
+import BundlerPluginFactory from "./bundler-plugin-factory";
+import AsyncEventEmitter from "../async-event-emitter"
+import Action from "../action";
+import BundleJavascriptAction from "../schemes/bundle-javascript"
 
 export interface BundlerConfig {
     source: string;
@@ -18,22 +23,33 @@ export interface BundlerConfig {
     debug?: boolean;
     cacheFile?: string;
     externalLibraries?: string[];
+
+    plugins?: BundlerPluginConfig[]
+    buildAction?: BundleJavascriptAction
 }
 
-export default class Bundler {
+export default class Bundler extends AsyncEventEmitter {
     public readonly config: BundlerConfig;
-    public plugins: Plugin[] = [];
+    public plugins: BundlerPlugin[] = [];
     public babelify: (filename: string) => Babelify.BabelifyObject;
     public browserify: browserify.BrowserifyObject;
 
     constructor(config: BundlerConfig) {
+        super()
         this.config = config
+
+        this.loadPlugins()
     }
 
-    plugin(plugin: Plugin) {
-        plugin.setCompiler(this)
-        this.plugins.push(plugin)
-        return this
+    loadPlugins(): void {
+        if(!this.config.plugins) return;
+
+        for(let pluginConfig of this.config.plugins) {
+            let plugin = BundlerPluginFactory.getPlugin(pluginConfig)
+            if(!plugin) throw new Error("Plugin not found: " + pluginConfig.plugin)
+            this.plugins.push(plugin)
+            plugin.setCompiler(this)
+        }
     }
 
     private createBabelify(): (filename: string) => Babelify.BabelifyObject {
@@ -91,16 +107,16 @@ export default class Bundler {
         this.babelify = this.createBabelify()
         this.browserify = this.createBrowserify()
 
-        this.emitPluginEvent("init");
+        await this.emit("init");
 
         this.browserify.transform(this.babelify)
         this.browserify.require(this.config.source, { entry: true })
 
-        this.emitPluginEvent("beforebuild");
+        await this.emit("before-build");
 
         let wasError = await this.listen(this.browserify.bundle())
 
-        this.emitPluginEvent("afterbuild");
+        await this.emit("after-build");
 
         if(wasError) {
             throw new Error("Build finished with errors")
