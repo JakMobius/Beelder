@@ -1,7 +1,7 @@
 import BundlerPlugin, { BundlerPluginConfig } from "./bundler-plugin";
 import BasePlugin from "./plugins/base";
 import ResourcePlugin from "./plugins/resource-plugin";
-import UseBabelPluginBundlerPlugin from "./plugins/use-babel-plugin";
+import JSONCommentReplacerBundlerPlugin from "./plugins/json-comment-replacer";
 
 export default class BundlerPluginFactory {
 
@@ -19,6 +19,6 @@ export default class BundlerPluginFactory {
     }
 }
 
-BundlerPluginFactory.register(UseBabelPluginBundlerPlugin)
+BundlerPluginFactory.register(JSONCommentReplacerBundlerPlugin)
 BundlerPluginFactory.register(BasePlugin)
 BundlerPluginFactory.register(ResourcePlugin)

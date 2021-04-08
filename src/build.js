@@ -50,8 +50,15 @@ let external = [
     "chalk",
     "exorcist",
     "source-map-support",
-    "typescript"
+    "typescript",
+    "@babel",
+    "browser-pack",
+    "stream"
 ]
+
+for(let babelDependency of fs.readdirSync(path.join(__dirname, "../node_modules/@babel"))) {
+    external.push("@babel/" + babelDependency);
+}
 
 for(let module of external) {
     compiler.external(module)

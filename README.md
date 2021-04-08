@@ -89,17 +89,15 @@ This is what `build-schemes.json` file is purposed for
 `build-schemes.json`:
 ```json
 {
-    "schemes": {
-        "build-project": {
-            "steps": [
-                {
-                    "action": "bundle-javascript",
-                    "source": "src/index.ts",
-                    "target": "dist/index.js"
-                }
-            ]
-        }
+  "schemes": {
+    "build-project": {
+      "steps": [{
+        "action": "bundle-javascript",
+        "source": "src/index.ts",
+        "target": "dist/index.js"
+      }]
     }
+  }
 }
 ```
   
@@ -158,17 +156,15 @@ my_project
 `build-schemes.json`:
 ```json5
 {
-    "schemes": {
-        "build-project": {
-            "steps": [
-                {
-                    "action": "create-texture-atlas",
-                    "source": "textures",
-                    "target": "dist"
-                }
-            ]
-        }
+  "schemes": {
+    "build-project": {
+      "steps": [{
+        "action": "create-texture-atlas",
+        "source": "textures",
+        "target": "dist"
+      }]
     }
+  }
 }
 ```
 
@@ -176,7 +172,7 @@ Beelder should create `dist` directory and put texture atlases (with
 mipmap levels) inside.
 
 **Note** Beelder will not recreate texture atlases if source directory
-was not modified. So, it's necessary to write atlases in cache directory
+was not modified. So, it's necessary to write atlases in a cache directory
 and then copy them to the `dist` so that the project will build
 correctly if the `dist` folder was deleted.
 
@@ -218,7 +214,7 @@ export class Dependency {
 images. Take them from your downloads folder, or take some screenshots.
 
 Also, in order to structure the assembly process, we divide the steps
-into different assembly diagrams. To find out how to automate the assembly
+into different assembly schemes. To find out how to automate the assembly
 of several schemes that depend on each other, see "Using targets"
 
 Create `build-schemes.json` file with following content:
@@ -227,36 +223,29 @@ Create `build-schemes.json` file with following content:
 {
   "schemes": {
     "build-typescript": {
-      "steps": [
-        {
-          "action": "bundle-javascript",
-          "source": "src/index.ts",
-          "target": "cache/index.js"
-        }
-      ]
+      "steps": [{
+        "action": "bundle-javascript",
+        "source": "src/index.ts",
+        "target": "cache/index.js"
+      }]
     },
     "build-texture-atlas": {
-      "steps": [
-        {
-          "action": "build-texture-atlas",
-          "source": "textures",
-          "target": "cache/textures"
-        }
-      ]
+      "steps": [{
+        "action": "build-texture-atlas",
+        "source": "textures",
+        "target": "cache/textures"
+      }]
     },
     "build-project": {
-      "steps": [
-        {
-          "action": "copy",
-          "source": "cache/textures",
-          "target": "release/textures"
-        },
-        {
-          "action": "copy",
-          "source": "cache/index.js",
-          "target": "release/"
-        }
-      ]
+      "steps": [{
+        "action": "copy",
+        "source": "cache/textures",
+        "target": "release/textures"
+      }, {
+        "action": "copy",
+        "source": "cache/index.js",
+        "target": "release/"
+      }]
     }
   }
 }
@@ -328,7 +317,9 @@ Here is how to define target:
   "target": {
     "path": "cache/index.js",
     "targetName": "compiled javascript"
-  }
+  },
+  // It can also be written down more simply
+  "target": "#compiled-javascript = cache/index.js"
 }]    
 ```
 
@@ -342,13 +333,15 @@ Here is how to 'consume' target:
   // "source": "cache/index.js",
   // New variant:
   "source": {
-    "targetName": "compiled javascript"
+    "targetName": "compiled-javascript"
   },
+  // Or, equivalently:
+  "source": "#compiled-javascript",
   "target": "..."
 }]    
 ```
 
-Now this step won't be executed before one which define this target.
+Now this step won't be executed before the one which defines this target.
 
 The new `build-schemes.json` file for above example will now look like this:
 ```json5
@@ -356,57 +349,36 @@ The new `build-schemes.json` file for above example will now look like this:
   "schemes": {
     // A scheme for building typescript
     "build-typescript": {
-      "steps": [
-        {
-          "action": "bundle-javascript",
-          "source": "src/index.ts",
-          "target": {
-            "targetName": "compiled javascript",
-            "path": "cache/index.js"
-          }
-        }
-      ]
+      "steps": [{
+        "action": "bundle-javascript",
+        "source": "src/index.ts",
+        "target": "#compiled-javascript = cache/index.js"
+      }]
     },
     // A scheme for building the texture atlas
     "build-texture-atlas": {
-      "steps": [
-        {
-          "action": "build-texture-atlas",
-          "source": "textures",
-          "target": {
-            "targetName": "texture atlases",
-            "path": "cache/textures"
-          }
-        }
-      ]
+      "steps": [{
+        "action": "build-texture-atlas",
+        "source": "textures",
+        "target": "#texture-atlases = cache/textures"
+      }]
     },
-    // A scheme to copy all temporary files to build folder
+    // A scheme which copies all temporary files to the build folder
     "build-project": {
-      "steps": [
-        {
-          // Copying texture atlases to build folder
-          "action": "copy",
-          "source": {
-            "targetName": "texture atlases"
-          },
-          "target": "release/"
-        },
-        {
-          // Copying compiled javascript to build folder
-          "action": "copy",
-          "source": {
-            "targetName": "compiled javascript"
-          },
-          "target": "release/"
-        }
-      ]
+      "steps": [{
+        // Copying texture atlases to build folder
+        "action": "copy",
+        "source": "#texture-atlases",
+        "target": "release/"
+      }, {
+        // Copying compiled javascript to build folder
+        "action": "copy",
+        "source": "#compiled-javascript",
+        "target": "release/"
+      }]
     }
   }
 }
 ```
-
-**Note**: It is not recommended adding spaces in the target names, in this case
-this was done for clarity
-
 
 #### Todo: complete readme

@@ -9,6 +9,8 @@ import path from "path";
 import Chalk from "chalk"
 import BuildCache from "./build-cache";
 import AsyncEventEmitter from "./async-event-emitter";
+import CreateShaderLibraryAction from "./schemes/create-shader-library";
+import CompileSCSSSchemeAction from "./schemes/compile-scss";
 
 export interface BeelderActionConfig {
     action: string
@@ -75,7 +77,7 @@ export default class Beelder {
             Timings.end("Build finished")
 
         } catch(e) {
-            console.error(e.message)
+            console.error(e)
             Timings.setStackState(state, "%s " + Chalk.red("failed due to error"))
             throw e
         }
@@ -118,10 +120,12 @@ export default class Beelder {
             let beelderReference = this.referenceMap.get(dependency)
             if(!beelderReference) throw new Error("Failed to resolve reference: '" + dependency + "'")
 
-            referencePath = beelderReference.path
+            referencePath = beelderReference.getPath()
         } else {
-            referencePath = reference.path
+            referencePath = reference.getPath()
         }
+
+        if(!referencePath) return null
 
         referencePath = path.join(this.projectRoot, referencePath)
 
@@ -136,3 +140,5 @@ export default class Beelder {
 Beelder.registerAction(BundleJavascriptAction)
 Beelder.registerAction(CopyAction)
 Beelder.registerAction(TextureAtlasAction)
+Beelder.registerAction(CreateShaderLibraryAction)
+Beelder.registerAction(CompileSCSSSchemeAction)

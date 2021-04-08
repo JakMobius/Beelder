@@ -57,20 +57,27 @@ async function runTests(files) {
     }
 }
 
-async function prepareAndRunTests() {
-    const files = fs.readdirSync(__dirname)
-
+async function cleanBuildCaches(files) {
     Timings.begin(Chalk.bold.blue("Cleaning test caches"))
     for(let file of files) {
         let fullPath = path.join(__dirname, file);
+        unlinkDirectory(path.join(fullPath, "dist"));
         unlinkDirectory(path.join(fullPath, "cache"));
         unlinkDirectory(path.join(fullPath, "beelder-cache"));
     }
     Timings.end()
+}
+
+async function prepareAndRunTests() {
+    const files = fs.readdirSync(__dirname)
+
+    await cleanBuildCaches(files)
 
     Timings.begin(Chalk.bold.blue("Running tests"))
     let testsResult = await runTests(files);
     Timings.end(Chalk.blue.bold("Passed " + testsResult.passed + " of " + testsResult.total + " tests"))
+
+    await cleanBuildCaches(files)
 }
 
 prepareAndRunTests().then(() => {})

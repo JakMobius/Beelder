@@ -1,0 +1,19 @@
+{ "schemes": {
+	"build": {
+		"steps": [{
+			"action": "bundle-javascript",
+			"source": "src/index.ts",
+			"target": "dist/index.js",
+			"compilerOptions": {
+				"babelPlugins": [
+					["./babel-plugin-comment-replacer", {
+						"replace": "specific-comment",
+						"object": {
+							"some-funny-data": "Peter Piper"
+						}
+					}]
+				]
+			}
+		}]
+	}
+}}

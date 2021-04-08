@@ -22,46 +22,46 @@ export default class BuildCache {
         return new BuildCache(sectionPath)
     }
 
-    async getJSON() {
+    getJSON() {
         if (!prepareFileLocation(this.cacheFilePath)) {
-            throw new Error("Impossible to create cache file");
+            throw new Error("Could not create cache file");
         }
 
-        return await fs.promises.readFile(this.cacheFilePath, "utf-8").then((text) => {
+        try {
+            let text = fs.readFileSync(this.cacheFilePath, "utf-8")
             return JSON.parse(text)
-        }).catch(async () => {
-            console.error("Cache file is missing or corrupted, clearing the cache")
-            await fs.promises.writeFile(this.cacheFilePath, "{}")
+        } catch(error) {
+            if(error.code != "ENOENT") {
+                console.error("Cache file is corrupted, clearing the cache")
+            }
+            fs.writeFileSync(this.cacheFilePath, "{}")
             return {}
-        })
+        }
     }
 
-    async setJSON(json: any) {
+    setJSON(json: any) {
         if (!prepareFileLocation(this.cacheFilePath)) {
-            throw new Error("Impossible to create cache file");
+            throw new Error("Could not create cache file");
         }
 
         try {
             let data = JSON.stringify(json)
-            await fs.promises.writeFile(this.cacheFilePath, data).catch((error) => {
-                console.error("Could not save cache file for section " + this.sectionPath);
-                console.error(error.message)
-            })
+            fs.writeFileSync(this.cacheFilePath, data)
         } catch(error) {
-            console.error("Coult not save cache file")
+            console.error("Could not save cache file for section " + this.sectionPath);
             console.error(error.message)
         }
     }
 
-    static async fileRequiresRefresh(cache: FileListCache, fileName: string): Promise<boolean> {
+    static fileRequiresRefresh(cache: FileListCache, fileName: string): boolean {
         let cacheEntry = cache[fileName];
 
         if(!cacheEntry) return true
 
-        try { await fs.promises.access(fileName) }
-        catch(error) { return true}
+        try { fs.accessSync(fileName) }
+        catch(error) { return true }
 
-        let stats = await fs.promises.stat(fileName)
+        let stats = fs.statSync(fileName)
 
         return cacheEntry.modificationDate < stats.mtime.getTime()
     }

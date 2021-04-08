@@ -1,16 +1,53 @@
 { "schemes": {
-	"build": {
-		"steps": [
-			{
-				"action": "bundle-javascript",
-				"source": "src/index.ts",
-				"target": "dist/index.js",
-				"compilerOptions": {
-					"plugins": [
-						{ "plugin": "resource-plugin" }
-					]
-				}
+	"find-resources": {
+		"steps": [{
+			// Rebuilding files without creating a bundle
+			// to find required resources
+
+			"action": "bundle-javascript",
+			"source": "src/index.ts",
+			"compilerOptions": {
+				"plugins": [{
+					// Plugin to find required resources
+					"plugin": "resource-plugin",
+					"rules": [{
+						"pattern": "**/*.glsl",
+						"target": "#glsl-resources = cache/shaders/resources.json"
+					}, {
+						"pattern": "**/*.(css|scss)",
+						"target": "#style-resources = cache/styles/resources.json"
+					}]
+				}]
 			}
-		]
+		}]
+	},
+	"generate-shader-library": {
+		"steps": [{
+			"action": "create-shader-library",
+			"source": "#glsl-resources",
+			"target": "#compiled-shaders = cache/styles/styles.css"
+		}]
+	},
+	"generate-styles-library": {
+		"steps": []
+	},
+	"build": {
+		"steps": [{
+			// Rebuilding the project again to inline resources and
+			// create a bundle. Only needed files will be rebuilt.
+
+			"action": "bundle-javascript",
+			"source": "src/index.ts",
+			"target": "dist/index.js",
+			"compilerOptions": {
+				"plugins": [{
+					"plugin": "json-comment-replacer",
+					"replacements": [{
+						"comment": "@shader-loader-placeholder",
+						"file": "#compiled-shaders"
+					}]
+				}]
+			}
+		}]
 	}
 }}

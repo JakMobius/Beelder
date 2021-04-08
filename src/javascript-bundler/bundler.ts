@@ -1,43 +1,57 @@
 import BundlerPlugin from "./bundler-plugin"
-import Babelify from 'babelify'
 // @ts-ignore
 import incremental from "browserify-incremental"
-import browserify from "browserify"
 import exorcist from "exorcist"
-import {prepareFileLocation} from "../utils";
+import {concatOptionalArrays, prepareFileLocation} from "../utils";
 import * as fs from "fs";
 import {BundlerPluginConfig} from "./bundler-plugin";
 import BundlerPluginFactory from "./bundler-plugin-factory";
-import AsyncEventEmitter from "../async-event-emitter"
-import Action from "../action";
 import BundleJavascriptAction from "../schemes/bundle-javascript"
+import BuildCache from "../build-cache";
+import Packer from "./packer/packer";
+import { Timings } from "..";
+import BeelderReference from "../reference";
+import BeelderScheme from "../scheme";
 
 export interface BundlerConfig {
+    scheme: BeelderScheme
+
     source: string;
     destination: string;
     projectRoot: string;
 
+    babelPlugins?: any[]
     babelPresets?: any;
     babelSourceType?: "script" | "module";
     generateSourceMaps?: boolean;
     debug?: boolean;
-    cacheFile?: string;
+    cache: BuildCache;
     externalLibraries?: string[];
 
     plugins?: BundlerPluginConfig[]
     buildAction?: BundleJavascriptAction
+    extensions?: string[]
 }
 
-export default class Bundler extends AsyncEventEmitter {
+/**
+ * A class that generalises TypeScript compilation.
+ */
+
+export default class Bundler {
     public readonly config: BundlerConfig;
     public plugins: BundlerPlugin[] = [];
-    public babelify: (filename: string) => Babelify.BabelifyObject;
-    public browserify: browserify.BrowserifyObject;
+    packer: Packer
+    scheme: BeelderScheme;
 
     constructor(config: BundlerConfig) {
-        super()
         this.config = config
 
+        if(!this.config.extensions) this.config.extensions = [".ts", ".ts", ".json"]
+        if(!this.config.babelSourceType) this.config.babelSourceType = "module"
+        if(!this.config.babelPresets) this.config.babelPresets = this.getDefaultBabelifyPresets()
+
+        this.scheme = config.scheme
+        this.packer = this.createPacker()
         this.loadPlugins()
     }
 
@@ -52,40 +66,16 @@ export default class Bundler extends AsyncEventEmitter {
         }
     }
 
-    private createBabelify(): (filename: string) => Babelify.BabelifyObject {
-        return Babelify.configure({
-            plugins: this.getBabelPluginList(),
-            presets: this.config.babelPresets ?? this.getDefaultBabelifyPresets(),
-            sourceMaps: this.config.generateSourceMaps,
-            sourceType: this.config.babelSourceType ?? "module",
-            extensions: ['.ts', '.js']
+    private createPacker(): Packer {
+        return new Packer(this, {
+            babelTransformConfig: {
+                plugins: this.getBabelPluginList(),
+                presets: this.config.babelPresets,
+                sourceMaps: this.config.generateSourceMaps,
+                sourceType: this.config.babelSourceType,
+            },
+            extensions: this.config.extensions
         })
-    }
-
-    private createBrowserify() {
-        let config = Object.assign({}, incremental.args, {
-            paths: [this.config.projectRoot + "/"],
-            extensions: ['.ts'],
-            detectGlobals: false
-        })
-
-        let result = browserify(config, { debug: this.config.debug });
-
-        if(this.config.externalLibraries) {
-            for (let externalLibrary of this.config.externalLibraries) {
-                result.external(externalLibrary)
-            }
-        }
-
-        for(let plugin of this.plugins) {
-            let pluginList = plugin.getBrowserifyPlugins()
-
-            if(pluginList) for(let plugin of pluginList) {
-                result.plugin(plugin)
-            }
-        }
-
-        return result
     }
 
     private getDefaultBabelifyPresets() {
@@ -97,31 +87,18 @@ export default class Bundler extends AsyncEventEmitter {
         ]
     }
 
-    private emitPluginEvent(event: string) {
-        for(let plugin of this.plugins) {
-            plugin.emit(event);
-        }
-    }
-
     async build() {
-        this.babelify = this.createBabelify()
-        this.browserify = this.createBrowserify()
-
-        await this.emit("init");
-
-        this.browserify.transform(this.babelify)
-        this.browserify.require(this.config.source, { entry: true })
-
-        await this.emit("before-build");
-
-        let wasError = await this.listen(this.browserify.bundle())
-
-        await this.emit("after-build");
-
-        if(wasError) {
-            throw new Error("Build finished with errors")
+        if(this.config.destination) {
+            let stream = await this.packer.bundleSubtree(this.config.source)
+            await this.listen(stream)
+            //stream.pipe(fs.createWriteStream(this.config.destination))
+        } else {
+            await this.packer.rebuildSubtree(this.config.source)
         }
 
+        Timings.begin("Saving cache")
+        await this.packer.cache.saveCaches()
+        Timings.end()
     }
 
     private getBabelPluginList(): any[] {
@@ -134,6 +111,8 @@ export default class Bundler extends AsyncEventEmitter {
             ["@babel/plugin-transform-runtime"],
         ]
 
+        result = concatOptionalArrays(result, this.config.babelPlugins)
+
         for (let plugin of this.plugins) {
             let babelPlugins = plugin.getBabelPlugins()
             if (babelPlugins) result = result.concat(babelPlugins)
@@ -144,6 +123,7 @@ export default class Bundler extends AsyncEventEmitter {
 
     private listen(stream: NodeJS.ReadableStream): Promise<boolean> {
         return new Promise<boolean>((resolve) => {
+
             let errorHandler = (error: any) => {
                 console.error(error.message)
                 if(error.annotated) console.error(error.annotated)
@@ -159,7 +139,7 @@ export default class Bundler extends AsyncEventEmitter {
                 let writeStream = fs.createWriteStream(this.config.destination)
                 stream.pipe(writeStream)
                 writeStream.on("error", errorHandler)
-                writeStream.on("finish", resolve)
+                writeStream.on("close", resolve)
             }
         })
     }
@@ -171,5 +151,25 @@ export default class Bundler extends AsyncEventEmitter {
             this.config.projectRoot,
             this.config.projectRoot
         )
+    }
+
+    getTargets(): BeelderReference[] | null {
+        let result: BeelderReference[] | null = null
+
+        for(let plugin of this.plugins) {
+            result = concatOptionalArrays(result, plugin.getTargets())
+        }
+
+        return result
+    }
+
+    getDependencies(): string[] | null {
+        let result: string[] | null = null
+
+        for(let plugin of this.plugins) {
+            result = concatOptionalArrays(result, plugin.getDependencies())
+        }
+
+        return result
     }
 }

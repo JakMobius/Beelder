@@ -1,37 +1,29 @@
-{
-	"schemes": {
-		"build-scripts": { "steps": [
-			{
+{ "schemes": {
+		"build-scripts": {
+			"steps": [{
 				"action": "bundle-javascript",
 				"source": "src/index.ts",
-				"target": {
-					"path": "cache/scripts/index.js",
-					"targetName": "scripts"
-				}
-			}
-		]},
-		"create-texture-map": { "steps": [
-			{
+				"target": "#scripts = cache/scripts/index.js"
+			}]
+		},
+		"create-texture-map": {
+			"steps": [{
 				"action": "texture-atlas",
 				"source": "src/textures",
-				"target": {
-					"path": "cache/textures/",
-					"targetName": "texture-atlas"
-				},
+				"target": "#texture-atlas = cache/textures",
 				"atlasSize": 2048
-			}
-		]},
-		"build": { "steps": [
-			{
+			}]
+		},
+		"build": {
+			"steps": [{
 				"action": "copy",
-				"source": { "targetName": "scripts" },
+				"source": "#scripts",
 				"target": "dist/"
-			},
-			{
+			},{
 				"action": "copy",
-				"source": { "targetName": "texture-atlas" },
+				"source": "#texture-atlas",
 				"target": "dist/"
-			}
-		]}
+			}]
+		}
 	}
 }

@@ -16,13 +16,11 @@ function getReplacement(api, options) {
 function handleProgram(api, options, path) {
     try {
         path.traverse({
-            enter(path) {
-                if(path.type === "ObjectExpression") {
-                    if(path.node.properties.length === 0 && path.node.innerComments.length === 1) {
-                        if(path.node.innerComments[0].value.trim() === options.replace) {
-                            path.replaceWith(getReplacement(api, options))
-                            path.node.innerComments = []
-                        }
+            ObjectExpression: (path) => {
+                if(path.node.properties.length === 0 && path.node.innerComments.length === 1) {
+                    if(path.node.innerComments[0].value.trim() === options.replace) {
+                        path.replaceWith(getReplacement(api, options))
+                        path.node.innerComments = []
                     }
                 }
             }

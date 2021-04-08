@@ -16,9 +16,9 @@ let beelder = new Beelder(schemes, __dirname)
 module.exports = beelder.runScheme("build").then(() => {
     let passed = false
     try {
-        passed = require("./dist/index.js")["some-funny-data"] = "Peter Piper"
+        require("./dist/index.js")
     } catch(error) {
-        console.error(error)
+        if(error === "Peter Piper") passed = true
     }
 
     if(passed) console.log(Chalk.green.bold("Test passed"))
