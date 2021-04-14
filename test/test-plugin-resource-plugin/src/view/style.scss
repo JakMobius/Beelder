@@ -1,2 +1,9 @@
 
 /* Let's pretend there is some scss code for the view */
+
+.view {
+  content: "banana";
+  &.hover {
+    color: "awesome";
+  }
+}

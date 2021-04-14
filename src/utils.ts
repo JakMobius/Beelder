@@ -47,7 +47,7 @@ export function prepareFileLocation(filePath: string): boolean {
         fs.accessSync(directoryPath)
     } catch(e) {
         try {
-            fs.mkdirSync(directoryPath, {recursive: true})
+            fs.mkdirSync(directoryPath, { recursive: true })
         } catch(e) {
             return false
         }
@@ -85,7 +85,7 @@ export function copyDirectoryContents(from: string, to: string) {
         } else if (stat.isSymbolicLink()) {
             fs.symlinkSync(fs.readlinkSync(path.join(from, element)), path.join(to, element));
         } else if (stat.isDirectory()) {
-            this.copyDirectoryContents(path.join(from, element), path.join(to, element));
+            copyDirectoryContents(path.join(from, element), path.join(to, element));
         }
     }
 }

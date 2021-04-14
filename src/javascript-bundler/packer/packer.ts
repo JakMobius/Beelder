@@ -2,31 +2,17 @@ import Bundler from "../bundler";
 import {FileListCache} from "../../build-cache";
 import * as babel from "@babel/core";
 
-import fs from 'fs';
 import path from "path";
-import traverse from "@babel/traverse";
 import generator from "@babel/generator"
-import {ResourceFileCacheInfo} from "../plugins/resource-plugin";
 
-import browserPack from "browser-pack"
 import {Timings} from "../../index";
 import AsyncEventEmitter from "../../async-event-emitter";
-import {Readable} from "stream";
 // @ts-ignore
 import mergeSourceMap from 'merge-source-map'
 import PackerCache from "./packer-cache";
 import PackerFile from "./packer-file";
 import PackerASTWatcher from "./packer-ast-watcher";
-
-export interface BabelSourceMap {
-    version: number;
-    sources: string[];
-    names: string[];
-    sourceRoot?: string;
-    sourcesContent?: string[];
-    mappings: string;
-    file: string;
-}
+import {ParseResult} from "@babel/core";
 
 export interface PackerFileCache {
     dependencies?: { [key: string]: string }
@@ -39,28 +25,10 @@ export interface PackerFileCache {
     [key: string]: any
 }
 
-export interface PackerTemporaryFileData {
-    
-}
-
-export interface PackerFileInfo {
-    cached: PackerFileCache
-    data: PackerTemporaryFileData
-}
-
 export interface CachedPackerConfig {
     babelTransformConfig: babel.TransformOptions,
-    extensions: string[]
-}
-
-export interface CachedPackerCacheSection {
-    /**
-     * Indicates if any file in this section has been updated and
-     * this section should be synchronised with cache
-     */
-
-    shouldUpdate?: boolean
-    files: FileListCache
+    extensions: string[],
+    includeExternalModules: boolean | string[]
 }
 
 export interface PackerBundleFileInfo {
@@ -69,12 +37,14 @@ export interface PackerBundleFileInfo {
     deps?: { [key: string]: string | number },
     entry?: boolean,
     sourceFile?: string
+    globalPath?: string
 }
 
 export class TraverseContext {
     metFiles: Set<string> = new Set<string>()
     cachedEntriesLoaded: number = 0
     rebuiltEntries: number = 0
+    onlyCompilableFiles: boolean = true
 }
 
 export class PackerBuildContext extends TraverseContext{
@@ -94,7 +64,7 @@ export default class Packer extends AsyncEventEmitter {
     astWatcher: any;
     babelConfigGenerated: boolean;
 
-    constructor(bundler: Bundler, config: CachedPackerConfig) {
+    constructor(bundler: Bundler, config: { babelTransformConfig: { presets: any; sourceType: "script" | "module"; plugins: any[]; sourceMaps: boolean }; extensions: string[]; includeExternalModules: boolean | string[] }) {
         super()
         this.bundler = bundler
         this.config = config
@@ -107,21 +77,25 @@ export default class Packer extends AsyncEventEmitter {
         this.babelConfigGenerated = false
     }
 
+    private updateBabelConfig(filePath: string) {
+        if(!this.babelConfigGenerated) this.generateConfig()
+        this.babelConfig.options.filename = filePath
+        this.babelConfig.options.sourceFileName = filePath
+    }
+
     /**
      * Transforms given data with provided sourcemap filename
      * @param data Source code to transform
      * @param filePath Path to file for sourcemap (project-relative)
      */
     transformFile(data: string, filePath: string): babel.BabelFileResult {
-
-        if(!this.babelConfigGenerated) {
-            this.generateConfig()
-        }
-
-        this.babelConfig.options.filename = filePath
-        this.babelConfig.options.sourceFileName = filePath
-
+        this.updateBabelConfig(filePath);
         return babel.transformSync(data, this.babelConfig.options)
+    }
+
+    parseFile(data: string, filePath: string): babel.types.File {
+        this.updateBabelConfig(filePath);
+        return babel.parseSync(data, this.babelConfig.options) as babel.types.File
     }
 
     private generateConfig() {
@@ -151,7 +125,7 @@ export default class Packer extends AsyncEventEmitter {
      * @param filePath Path to file for sourcemap (project-relative)
      * @param originalCode Original file code
      */
-    public generateCode(ast: babel.types.File, filePath: string, originalCode: string) {
+    public generateCode(ast: babel.types.File | babel.types.Program, filePath: string, originalCode: string) {
         let generated = generator(ast, {
             sourceMaps: true,
             sourceFileName: filePath,
@@ -163,39 +137,38 @@ export default class Packer extends AsyncEventEmitter {
         return generated.code + "\n" + this.sourceMapComment(generated.map)
     }
 
-    async bundleSubtree(entry: string): Promise<NodeJS.ReadWriteStream> {
-
-        await this.rebuildSubtree(entry)
+    async bundleSubtree(entry: string): Promise<PackerBundleFileInfo[]> {
 
         let context = new PackerBuildContext()
+        context.onlyCompilableFiles = false
         await this.traverse(entry, context, (filePath: string, data: PackerFile) => {
             context.bundleCache.push({
                 id: filePath,
                 source: data.getTransformedCode(),
                 deps: Object.assign({ }, data.getDependencies()),
                 entry: context.bundleCache.length == 0,
-                sourceFile: path.relative(this.bundler.config.projectRoot, filePath)
+                sourceFile: path.relative(this.bundler.config.projectRoot, filePath),
+                globalPath: filePath
             })
         })
 
-        Timings.begin("Collapsing bundle identifiers")
-        this.collapseBundleIDs(context.bundleCache)
-        Timings.end()
-
-        return Readable.from(context.bundleCache).pipe(browserPack({
-            raw: true
-        }))
+        return context.bundleCache
     }
 
-    async rebuildSubtree(entry: string) {
+    /**
+     * @param entry
+     * @returns true if at least one file was modified
+     */
+    async rebuildSubtree(entry: string): Promise<boolean> {
         Timings.begin("Rebuilding files")
         await this.emit("before-build")
         let context = await this.traverse(entry)
         await this.emit("after-build")
         Timings.end("Finished rebuilding files (had to rebuild " + context.rebuiltEntries + " / " + (context.cachedEntriesLoaded + context.rebuiltEntries) + " files)")
+        return context.rebuiltEntries > 0
     }
 
-    private collapseBundleIDs(cache: PackerBundleFileInfo[]) {
+    public static collapseBundleIDs(cache: PackerBundleFileInfo[]) {
         let fileNames = new Map<string | number, number>()
         let fileIndex = 0
 
@@ -216,12 +189,26 @@ export default class Packer extends AsyncEventEmitter {
         }
     }
 
+    /**
+     * Get file meta-information and cache
+     * @param filePath global file path
+     */
     getFile(filePath: string) {
         let file = this.files.get(filePath)
         if(file) return file
         file = new PackerFile(this, filePath)
         this.files.set(filePath, file)
         return file
+    }
+
+    shouldWalkFile(path: string) {
+        if(path.startsWith(".")) return true
+
+        if(this.config.includeExternalModules === true) {
+            return true
+        } else if(Array.isArray(this.config.includeExternalModules)) {
+            return this.config.includeExternalModules.indexOf(path) != -1
+        }
     }
 
     /**
@@ -263,9 +250,10 @@ export default class Packer extends AsyncEventEmitter {
         // automatically. See getDependencies
         // documentation
         for(let [name, absolute] of Object.entries(file.getDependencies())) {
-            if(name.startsWith(".")) {
-                await this.traverse(absolute, tempContext, callback);
-            }
+            if(!this.shouldWalkFile(name)) continue;
+            if(tempContext.onlyCompilableFiles && !this.getFile(absolute).shouldBeCompiled) continue
+
+            await this.traverse(absolute, tempContext, callback);
         }
 
         return tempContext as T

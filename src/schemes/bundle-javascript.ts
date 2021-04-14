@@ -10,6 +10,19 @@ export interface BundleJavascriptActionConfig extends BaseActionConfig {
     compilerOptions: any
 }
 
+/**
+ * The class that implements bundle-javascript beelder action.
+ * This action may be used multiple times in single build action.
+ * If "target" field is omitted, project will be rebuilt in order
+ * to update caches.
+ *
+ * The following parameters must be the same in all dependent
+ * configurations (which share common source files):
+ * - `compilerOptions.babelPlugins`
+ * - `compilerOptions.babelPresets`
+ * - `compilerOptions.babelSourceType`
+ */
+
 export default class BundleJavascriptAction extends BaseAction {
 
     static readonly actionName: string = "bundle-javascript"
@@ -20,6 +33,7 @@ export default class BundleJavascriptAction extends BaseAction {
         super(config, scheme);
         
         this.compilerOptions = config.compilerOptions
+
 
         this.createBundler()
     }

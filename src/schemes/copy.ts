@@ -24,7 +24,13 @@ export default class CopyAction extends BaseAction {
         let source = this.scheme.beelder.resolveReference(this.source)
         let destination = this.scheme.beelder.resolveReference(this.target)
 
-        let sourceStat = await fs.promises.stat(source)
+        let sourceStat;
+
+        try {
+            sourceStat = await fs.promises.stat(source)
+        } catch(e) {
+            throw new Error("Copying failed: " + e.message)
+        }
 
         let dirname: string
 

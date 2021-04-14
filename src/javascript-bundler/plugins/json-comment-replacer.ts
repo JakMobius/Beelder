@@ -113,7 +113,7 @@ export default class CommentReplacerBundlerPlugin extends BundlerPlugin {
     private maybeReplace(path: NodePath<ObjectExpression>, fileCache: CommentReplacerFileCache) {
         let node = path.node
 
-        if(node.properties.length !== 0 || node.innerComments.length !== 1) {
+        if(!node.properties || !node.innerComments || node.properties.length !== 0 || node.innerComments.length !== 1) {
             return
         }
 

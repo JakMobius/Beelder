@@ -344,7 +344,354 @@ function expand(str, isTop) {
 }
 
 
-},{"balanced-match":4,"concat-map":6}],6:[function(require,module,exports){
+},{"balanced-match":4,"concat-map":7}],6:[function(require,module,exports){
+// builtin
+var fs = require('fs');
+var path = require('path');
+
+// vendor
+var resv = require('resolve');
+
+// given a path, create an array of node_module paths for it
+// borrowed from substack/resolve
+function nodeModulesPaths (start, cb) {
+    var splitRe = process.platform === 'win32' ? /[\/\\]/ : /\/+/;
+    var parts = start.split(splitRe);
+
+    var dirs = [];
+    for (var i = parts.length - 1; i >= 0; i--) {
+        if (parts[i] === 'node_modules') continue;
+        var dir = path.join.apply(
+            path, parts.slice(0, i + 1).concat(['node_modules'])
+        );
+        if (!parts[0].match(/([A-Za-z]:)/)) {
+            dir = '/' + dir;
+        }
+        dirs.push(dir);
+    }
+    return dirs;
+}
+
+function find_shims_in_package(pkgJson, cur_path, shims, browser) {
+    try {
+        var info = JSON.parse(pkgJson);
+    }
+    catch (err) {
+        err.message = pkgJson + ' : ' + err.message
+        throw err;
+    }
+
+    var replacements = getReplacements(info, browser);
+
+    // no replacements, skip shims
+    if (!replacements) {
+        return;
+    }
+
+    // if browser mapping is a string
+    // then it just replaces the main entry point
+    if (typeof replacements === 'string') {
+        var key = path.resolve(cur_path, info.main || 'index.js');
+        shims[key] = path.resolve(cur_path, replacements);
+        return;
+    }
+
+    // http://nodejs.org/api/modules.html#modules_loading_from_node_modules_folders
+    Object.keys(replacements).forEach(function(key) {
+        var val;
+        if (replacements[key] === false) {
+            val = path.normalize(__dirname + '/empty.js');
+        }
+        else {
+            val = replacements[key];
+            // if target is a relative path, then resolve
+            // otherwise we assume target is a module
+            if (val[0] === '.') {
+                val = path.resolve(cur_path, val);
+            }
+        }
+
+        if (key[0] === '/' || key[0] === '.') {
+            // if begins with / ../ or ./ then we must resolve to a full path
+            key = path.resolve(cur_path, key);
+        }
+        shims[key] = val;
+    });
+
+    [ '.js', '.json' ].forEach(function (ext) {
+        Object.keys(shims).forEach(function (key) {
+            if (!shims[key + ext]) {
+                shims[key + ext] = shims[key];
+            }
+        });
+    });
+}
+
+// paths is mutated
+// load shims from first package.json file found
+function load_shims(paths, browser, cb) {
+    // identify if our file should be replaced per the browser field
+    // original filename|id -> replacement
+    var shims = Object.create(null);
+
+    (function next() {
+        var cur_path = paths.shift();
+        if (!cur_path) {
+            return cb(null, shims);
+        }
+
+        var pkg_path = path.join(cur_path, 'package.json');
+
+        fs.readFile(pkg_path, 'utf8', function(err, data) {
+            if (err) {
+                // ignore paths we can't open
+                // avoids an exists check
+                if (err.code === 'ENOENT') {
+                    return next();
+                }
+
+                return cb(err);
+            }
+            try {
+                find_shims_in_package(data, cur_path, shims, browser);
+                return cb(null, shims);
+            }
+            catch (err) {
+                return cb(err);
+            }
+        });
+    })();
+};
+
+// paths is mutated
+// synchronously load shims from first package.json file found
+function load_shims_sync(paths, browser) {
+    // identify if our file should be replaced per the browser field
+    // original filename|id -> replacement
+    var shims = Object.create(null);
+    var cur_path;
+
+    while (cur_path = paths.shift()) {
+        var pkg_path = path.join(cur_path, 'package.json');
+
+        try {
+            var data = fs.readFileSync(pkg_path, 'utf8');
+            find_shims_in_package(data, cur_path, shims, browser);
+            return shims;
+        }
+        catch (err) {
+            // ignore paths we can't open
+            // avoids an exists check
+            if (err.code === 'ENOENT') {
+                continue;
+            }
+
+            throw err;
+        }
+    }
+    return shims;
+}
+
+function build_resolve_opts(opts, base) {
+    var packageFilter = opts.packageFilter;
+    var browser = normalizeBrowserFieldName(opts.browser)
+
+    opts.basedir = base;
+    opts.packageFilter = function (info, pkgdir) {
+        if (packageFilter) info = packageFilter(info, pkgdir);
+
+        var replacements = getReplacements(info, browser);
+
+        // no browser field, keep info unchanged
+        if (!replacements) {
+            return info;
+        }
+
+        info[browser] = replacements;
+
+        // replace main
+        if (typeof replacements === 'string') {
+            info.main = replacements;
+            return info;
+        }
+
+        var replace_main = replacements[info.main || './index.js'] ||
+            replacements['./' + info.main || './index.js'];
+
+        info.main = replace_main || info.main;
+        return info;
+    };
+
+    var pathFilter = opts.pathFilter;
+    opts.pathFilter = function(info, resvPath, relativePath) {
+        if (relativePath[0] != '.') {
+            relativePath = './' + relativePath;
+        }
+        var mappedPath;
+        if (pathFilter) {
+            mappedPath = pathFilter.apply(this, arguments);
+        }
+        if (mappedPath) {
+            return mappedPath;
+        }
+
+        var replacements = info[browser];
+        if (!replacements) {
+            return;
+        }
+
+        mappedPath = replacements[relativePath];
+        if (!mappedPath && path.extname(relativePath) === '') {
+            mappedPath = replacements[relativePath + '.js'];
+            if (!mappedPath) {
+                mappedPath = replacements[relativePath + '.json'];
+            }
+        }
+        return mappedPath;
+    };
+
+    return opts;
+}
+
+function resolve(id, opts, cb) {
+
+    // opts.filename
+    // opts.paths
+    // opts.modules
+    // opts.packageFilter
+
+    opts = opts || {};
+    opts.filename = opts.filename || '';
+
+    var base = path.dirname(opts.filename);
+
+    if (opts.basedir) {
+        base = opts.basedir;
+    }
+
+    var paths = nodeModulesPaths(base);
+
+    if (opts.paths) {
+        paths.push.apply(paths, opts.paths);
+    }
+
+    paths = paths.map(function(p) {
+        return path.dirname(p);
+    });
+
+    // we must always load shims because the browser field could shim out a module
+    load_shims(paths, opts.browser, function(err, shims) {
+        if (err) {
+            return cb(err);
+        }
+
+        var resid = path.resolve(opts.basedir || path.dirname(opts.filename), id);
+        if (shims[id] || shims[resid]) {
+            var xid = shims[id] ? id : resid;
+            // if the shim was is an absolute path, it was fully resolved
+            if (shims[xid][0] === '/') {
+                return resv(shims[xid], build_resolve_opts(opts, base), function(err, full, pkg) {
+                    cb(null, full, pkg);
+                });
+            }
+
+            // module -> alt-module shims
+            id = shims[xid];
+        }
+
+        var modules = opts.modules || Object.create(null);
+        var shim_path = modules[id];
+        if (shim_path) {
+            return cb(null, shim_path);
+        }
+
+        // our browser field resolver
+        // if browser field is an object tho?
+        var full = resv(id, build_resolve_opts(opts, base), function(err, full, pkg) {
+            if (err) {
+                return cb(err);
+            }
+
+            var resolved = (shims) ? shims[full] || full : full;
+            cb(null, resolved, pkg);
+        });
+    });
+};
+
+resolve.sync = function (id, opts) {
+
+    // opts.filename
+    // opts.paths
+    // opts.modules
+    // opts.packageFilter
+
+    opts = opts || {};
+    opts.filename = opts.filename || '';
+
+    var base = path.dirname(opts.filename);
+
+    if (opts.basedir) {
+        base = opts.basedir;
+    }
+
+    var paths = nodeModulesPaths(base);
+
+    if (opts.paths) {
+        paths.push.apply(paths, opts.paths);
+    }
+
+    paths = paths.map(function(p) {
+        return path.dirname(p);
+    });
+
+    // we must always load shims because the browser field could shim out a module
+    var shims = load_shims_sync(paths, opts.browser);
+    var resid = path.resolve(opts.basedir || path.dirname(opts.filename), id);
+
+    if (shims[id] || shims[resid]) {
+        var xid = shims[id] ? id : resid;
+        // if the shim was is an absolute path, it was fully resolved
+        if (shims[xid][0] === '/') {
+            return resv.sync(shims[xid], build_resolve_opts(opts, base));
+        }
+
+        // module -> alt-module shims
+        id = shims[xid];
+    }
+
+    var modules = opts.modules || Object.create(null);
+    var shim_path = modules[id];
+    if (shim_path) {
+        return shim_path;
+    }
+
+    // our browser field resolver
+    // if browser field is an object tho?
+    var full = resv.sync(id, build_resolve_opts(opts, base));
+
+    return (shims) ? shims[full] || full : full;
+};
+
+function normalizeBrowserFieldName(browser) {
+    return browser || 'browser';
+}
+
+function getReplacements(info, browser) {
+    browser = normalizeBrowserFieldName(browser);
+    var replacements = info[browser] || info.browser;
+
+    // support legacy browserify field for easier migration from legacy
+    // many packages used this field historically
+    if (typeof info.browserify === 'string' && !replacements) {
+        replacements = info.browserify;
+    }
+
+    return replacements;
+}
+
+module.exports = resolve;
+
+},{"fs":"fs","path":"path","resolve":15}],7:[function(require,module,exports){
 module.exports = function (xs, fn) {
     var res = [];
     for (var i = 0; i < xs.length; i++) {
@@ -359,7 +706,231 @@ var isArray = Array.isArray || function (xs) {
     return Object.prototype.toString.call(xs) === '[object Array]';
 };
 
-},{}],7:[function(require,module,exports){
+},{}],8:[function(require,module,exports){
+'use strict';
+
+/* eslint no-invalid-this: 1 */
+
+var ERROR_MESSAGE = 'Function.prototype.bind called on incompatible ';
+var slice = Array.prototype.slice;
+var toStr = Object.prototype.toString;
+var funcType = '[object Function]';
+
+module.exports = function bind(that) {
+    var target = this;
+    if (typeof target !== 'function' || toStr.call(target) !== funcType) {
+        throw new TypeError(ERROR_MESSAGE + target);
+    }
+    var args = slice.call(arguments, 1);
+
+    var bound;
+    var binder = function () {
+        if (this instanceof bound) {
+            var result = target.apply(
+                this,
+                args.concat(slice.call(arguments))
+            );
+            if (Object(result) === result) {
+                return result;
+            }
+            return this;
+        } else {
+            return target.apply(
+                that,
+                args.concat(slice.call(arguments))
+            );
+        }
+    };
+
+    var boundLength = Math.max(0, target.length - args.length);
+    var boundArgs = [];
+    for (var i = 0; i < boundLength; i++) {
+        boundArgs.push('$' + i);
+    }
+
+    bound = Function('binder', 'return function (' + boundArgs.join(',') + '){ return binder.apply(this,arguments); }')(binder);
+
+    if (target.prototype) {
+        var Empty = function Empty() {};
+        Empty.prototype = target.prototype;
+        bound.prototype = new Empty();
+        Empty.prototype = null;
+    }
+
+    return bound;
+};
+
+},{}],9:[function(require,module,exports){
+'use strict';
+
+var implementation = require('./implementation');
+
+module.exports = Function.prototype.bind || implementation;
+
+},{"./implementation":8}],10:[function(require,module,exports){
+'use strict';
+
+var bind = require('function-bind');
+
+module.exports = bind.call(Function.call, Object.prototype.hasOwnProperty);
+
+},{"function-bind":9}],11:[function(require,module,exports){
+module.exports={
+	"assert": true,
+	"assert/strict": ">= 15",
+	"async_hooks": ">= 8",
+	"buffer_ieee754": "< 0.9.7",
+	"buffer": true,
+	"child_process": true,
+	"cluster": true,
+	"console": true,
+	"constants": true,
+	"crypto": true,
+	"_debug_agent": ">= 1 && < 8",
+	"_debugger": "< 8",
+	"dgram": true,
+	"diagnostics_channel": ">= 15.1",
+	"dns": true,
+	"dns/promises": ">= 15",
+	"domain": ">= 0.7.12",
+	"events": true,
+	"freelist": "< 6",
+	"fs": true,
+	"fs/promises": [">= 10 && < 10.1", ">= 14"],
+	"_http_agent": ">= 0.11.1",
+	"_http_client": ">= 0.11.1",
+	"_http_common": ">= 0.11.1",
+	"_http_incoming": ">= 0.11.1",
+	"_http_outgoing": ">= 0.11.1",
+	"_http_server": ">= 0.11.1",
+	"http": true,
+	"http2": ">= 8.8",
+	"https": true,
+	"inspector": ">= 8.0.0",
+	"_linklist": "< 8",
+	"module": true,
+	"net": true,
+	"node-inspect/lib/_inspect": ">= 7.6.0 && < 12",
+	"node-inspect/lib/internal/inspect_client": ">= 7.6.0 && < 12",
+	"node-inspect/lib/internal/inspect_repl": ">= 7.6.0 && < 12",
+	"os": true,
+	"path": true,
+	"path/posix": ">= 15.3",
+	"path/win32": ">= 15.3",
+	"perf_hooks": ">= 8.5",
+	"process": ">= 1",
+	"punycode": true,
+	"querystring": true,
+	"readline": true,
+	"repl": true,
+	"smalloc": ">= 0.11.5 && < 3",
+	"_stream_duplex": ">= 0.9.4",
+	"_stream_transform": ">= 0.9.4",
+	"_stream_wrap": ">= 1.4.1",
+	"_stream_passthrough": ">= 0.9.4",
+	"_stream_readable": ">= 0.9.4",
+	"_stream_writable": ">= 0.9.4",
+	"stream": true,
+	"stream/promises": ">= 15",
+	"string_decoder": true,
+	"sys": [">= 0.6 && < 0.7", ">= 0.8"],
+	"timers": true,
+	"timers/promises": ">= 15",
+	"_tls_common": ">= 0.11.13",
+	"_tls_legacy": ">= 0.11.3 && < 10",
+	"_tls_wrap": ">= 0.11.3",
+	"tls": true,
+	"trace_events": ">= 10",
+	"tty": true,
+	"url": true,
+	"util": true,
+	"util/types": ">= 15.3",
+	"v8/tools/arguments": ">= 10 && < 12",
+	"v8/tools/codemap": [">= 4.4.0 && < 5", ">= 5.2.0 && < 12"],
+	"v8/tools/consarray": [">= 4.4.0 && < 5", ">= 5.2.0 && < 12"],
+	"v8/tools/csvparser": [">= 4.4.0 && < 5", ">= 5.2.0 && < 12"],
+	"v8/tools/logreader": [">= 4.4.0 && < 5", ">= 5.2.0 && < 12"],
+	"v8/tools/profile_view": [">= 4.4.0 && < 5", ">= 5.2.0 && < 12"],
+	"v8/tools/splaytree": [">= 4.4.0 && < 5", ">= 5.2.0 && < 12"],
+	"v8": ">= 1",
+	"vm": true,
+	"wasi": ">= 13.4 && < 13.5",
+	"worker_threads": ">= 11.7",
+	"zlib": true
+}
+
+},{}],12:[function(require,module,exports){
+'use strict';
+
+var has = require('has');
+
+function specifierIncluded(current, specifier) {
+	var nodeParts = current.split('.');
+	var parts = specifier.split(' ');
+	var op = parts.length > 1 ? parts[0] : '=';
+	var versionParts = (parts.length > 1 ? parts[1] : parts[0]).split('.');
+
+	for (var i = 0; i < 3; ++i) {
+		var cur = parseInt(nodeParts[i] || 0, 10);
+		var ver = parseInt(versionParts[i] || 0, 10);
+		if (cur === ver) {
+			continue; // eslint-disable-line no-restricted-syntax, no-continue
+		}
+		if (op === '<') {
+			return cur < ver;
+		}
+		if (op === '>=') {
+			return cur >= ver;
+		}
+		return false;
+	}
+	return op === '>=';
+}
+
+function matchesRange(current, range) {
+	var specifiers = range.split(/ ?&& ?/);
+	if (specifiers.length === 0) {
+		return false;
+	}
+	for (var i = 0; i < specifiers.length; ++i) {
+		if (!specifierIncluded(current, specifiers[i])) {
+			return false;
+		}
+	}
+	return true;
+}
+
+function versionIncluded(nodeVersion, specifierValue) {
+	if (typeof specifierValue === 'boolean') {
+		return specifierValue;
+	}
+
+	var current = typeof nodeVersion === 'undefined'
+		? process.versions && process.versions.node && process.versions.node
+		: nodeVersion;
+
+	if (typeof current !== 'string') {
+		throw new TypeError(typeof nodeVersion === 'undefined' ? 'Unable to determine current node version' : 'If provided, a valid node version is required');
+	}
+
+	if (specifierValue && typeof specifierValue === 'object') {
+		for (var i = 0; i < specifierValue.length; ++i) {
+			if (matchesRange(current, specifierValue[i])) {
+				return true;
+			}
+		}
+		return false;
+	}
+	return matchesRange(current, specifierValue);
+}
+
+var data = require('./core.json');
+
+module.exports = function isCore(x, nodeVersion) {
+	return has(data, x) && versionIncluded(nodeVersion, data[x]);
+};
+
+},{"./core.json":11,"has":10}],13:[function(require,module,exports){
 module.exports = minimatch
 minimatch.Minimatch = Minimatch
 
@@ -1284,7 +1855,763 @@ function regExpEscape (s) {
   return s.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&')
 }
 
-},{"brace-expansion":5,"path":"path"}],8:[function(require,module,exports){
+},{"brace-expansion":5,"path":"path"}],14:[function(require,module,exports){
+'use strict';
+
+var isWindows = process.platform === 'win32';
+
+// Regex to split a windows path into three parts: [*, device, slash,
+// tail] windows-only
+var splitDeviceRe =
+    /^([a-zA-Z]:|[\\\/]{2}[^\\\/]+[\\\/]+[^\\\/]+)?([\\\/])?([\s\S]*?)$/;
+
+// Regex to split the tail part of the above into [*, dir, basename, ext]
+var splitTailRe =
+    /^([\s\S]*?)((?:\.{1,2}|[^\\\/]+?|)(\.[^.\/\\]*|))(?:[\\\/]*)$/;
+
+var win32 = {};
+
+// Function to split a filename into [root, dir, basename, ext]
+function win32SplitPath(filename) {
+  // Separate device+slash from tail
+  var result = splitDeviceRe.exec(filename),
+      device = (result[1] || '') + (result[2] || ''),
+      tail = result[3] || '';
+  // Split the tail into dir, basename and extension
+  var result2 = splitTailRe.exec(tail),
+      dir = result2[1],
+      basename = result2[2],
+      ext = result2[3];
+  return [device, dir, basename, ext];
+}
+
+win32.parse = function(pathString) {
+  if (typeof pathString !== 'string') {
+    throw new TypeError(
+        "Parameter 'pathString' must be a string, not " + typeof pathString
+    );
+  }
+  var allParts = win32SplitPath(pathString);
+  if (!allParts || allParts.length !== 4) {
+    throw new TypeError("Invalid path '" + pathString + "'");
+  }
+  return {
+    root: allParts[0],
+    dir: allParts[0] + allParts[1].slice(0, -1),
+    base: allParts[2],
+    ext: allParts[3],
+    name: allParts[2].slice(0, allParts[2].length - allParts[3].length)
+  };
+};
+
+
+
+// Split a filename into [root, dir, basename, ext], unix version
+// 'root' is just a slash, or nothing.
+var splitPathRe =
+    /^(\/?|)([\s\S]*?)((?:\.{1,2}|[^\/]+?|)(\.[^.\/]*|))(?:[\/]*)$/;
+var posix = {};
+
+
+function posixSplitPath(filename) {
+  return splitPathRe.exec(filename).slice(1);
+}
+
+
+posix.parse = function(pathString) {
+  if (typeof pathString !== 'string') {
+    throw new TypeError(
+        "Parameter 'pathString' must be a string, not " + typeof pathString
+    );
+  }
+  var allParts = posixSplitPath(pathString);
+  if (!allParts || allParts.length !== 4) {
+    throw new TypeError("Invalid path '" + pathString + "'");
+  }
+  allParts[1] = allParts[1] || '';
+  allParts[2] = allParts[2] || '';
+  allParts[3] = allParts[3] || '';
+
+  return {
+    root: allParts[0],
+    dir: allParts[0] + allParts[1].slice(0, -1),
+    base: allParts[2],
+    ext: allParts[3],
+    name: allParts[2].slice(0, allParts[2].length - allParts[3].length)
+  };
+};
+
+
+if (isWindows)
+  module.exports = win32.parse;
+else /* posix */
+  module.exports = posix.parse;
+
+module.exports.posix = posix.parse;
+module.exports.win32 = win32.parse;
+
+},{}],15:[function(require,module,exports){
+var async = require('./lib/async');
+async.core = require('./lib/core');
+async.isCore = require('./lib/is-core');
+async.sync = require('./lib/sync');
+
+module.exports = async;
+
+},{"./lib/async":16,"./lib/core":19,"./lib/is-core":20,"./lib/sync":23}],16:[function(require,module,exports){
+var fs = require('fs');
+var path = require('path');
+var caller = require('./caller');
+var nodeModulesPaths = require('./node-modules-paths');
+var normalizeOptions = require('./normalize-options');
+var isCore = require('is-core-module');
+
+var realpathFS = fs.realpath && typeof fs.realpath.native === 'function' ? fs.realpath.native : fs.realpath;
+
+var defaultIsFile = function isFile(file, cb) {
+    fs.stat(file, function (err, stat) {
+        if (!err) {
+            return cb(null, stat.isFile() || stat.isFIFO());
+        }
+        if (err.code === 'ENOENT' || err.code === 'ENOTDIR') return cb(null, false);
+        return cb(err);
+    });
+};
+
+var defaultIsDir = function isDirectory(dir, cb) {
+    fs.stat(dir, function (err, stat) {
+        if (!err) {
+            return cb(null, stat.isDirectory());
+        }
+        if (err.code === 'ENOENT' || err.code === 'ENOTDIR') return cb(null, false);
+        return cb(err);
+    });
+};
+
+var defaultRealpath = function realpath(x, cb) {
+    realpathFS(x, function (realpathErr, realPath) {
+        if (realpathErr && realpathErr.code !== 'ENOENT') cb(realpathErr);
+        else cb(null, realpathErr ? x : realPath);
+    });
+};
+
+var maybeRealpath = function maybeRealpath(realpath, x, opts, cb) {
+    if (opts && opts.preserveSymlinks === false) {
+        realpath(x, cb);
+    } else {
+        cb(null, x);
+    }
+};
+
+var defaultReadPackage = function defaultReadPackage(readFile, pkgfile, cb) {
+    readFile(pkgfile, function (readFileErr, body) {
+        if (readFileErr) cb(readFileErr);
+        else {
+            try {
+                var pkg = JSON.parse(body);
+                cb(null, pkg);
+            } catch (jsonErr) {
+                cb(null);
+            }
+        }
+    });
+};
+
+var getPackageCandidates = function getPackageCandidates(x, start, opts) {
+    var dirs = nodeModulesPaths(start, opts, x);
+    for (var i = 0; i < dirs.length; i++) {
+        dirs[i] = path.join(dirs[i], x);
+    }
+    return dirs;
+};
+
+module.exports = function resolve(x, options, callback) {
+    var cb = callback;
+    var opts = options;
+    if (typeof options === 'function') {
+        cb = opts;
+        opts = {};
+    }
+    if (typeof x !== 'string') {
+        var err = new TypeError('Path must be a string.');
+        return process.nextTick(function () {
+            cb(err);
+        });
+    }
+
+    opts = normalizeOptions(x, opts);
+
+    var isFile = opts.isFile || defaultIsFile;
+    var isDirectory = opts.isDirectory || defaultIsDir;
+    var readFile = opts.readFile || fs.readFile;
+    var realpath = opts.realpath || defaultRealpath;
+    var readPackage = opts.readPackage || defaultReadPackage;
+    if (opts.readFile && opts.readPackage) {
+        var conflictErr = new TypeError('`readFile` and `readPackage` are mutually exclusive.');
+        return process.nextTick(function () {
+            cb(conflictErr);
+        });
+    }
+    var packageIterator = opts.packageIterator;
+
+    var extensions = opts.extensions || ['.js'];
+    var includeCoreModules = opts.includeCoreModules !== false;
+    var basedir = opts.basedir || path.dirname(caller());
+    var parent = opts.filename || basedir;
+
+    opts.paths = opts.paths || [];
+
+    // ensure that `basedir` is an absolute path at this point, resolving against the process' current working directory
+    var absoluteStart = path.resolve(basedir);
+
+    maybeRealpath(
+        realpath,
+        absoluteStart,
+        opts,
+        function (err, realStart) {
+            if (err) cb(err);
+            else init(realStart);
+        }
+    );
+
+    var res;
+    function init(basedir) {
+        if ((/^(?:\.\.?(?:\/|$)|\/|([A-Za-z]:)?[/\\])/).test(x)) {
+            res = path.resolve(basedir, x);
+            if (x === '.' || x === '..' || x.slice(-1) === '/') res += '/';
+            if ((/\/$/).test(x) && res === basedir) {
+                loadAsDirectory(res, opts.package, onfile);
+            } else loadAsFile(res, opts.package, onfile);
+        } else if (includeCoreModules && isCore(x)) {
+            return cb(null, x);
+        } else loadNodeModules(x, basedir, function (err, n, pkg) {
+            if (err) cb(err);
+            else if (n) {
+                return maybeRealpath(realpath, n, opts, function (err, realN) {
+                    if (err) {
+                        cb(err);
+                    } else {
+                        cb(null, realN, pkg);
+                    }
+                });
+            } else {
+                var moduleError = new Error("Cannot find module '" + x + "' from '" + parent + "'");
+                moduleError.code = 'MODULE_NOT_FOUND';
+                cb(moduleError);
+            }
+        });
+    }
+
+    function onfile(err, m, pkg) {
+        if (err) cb(err);
+        else if (m) cb(null, m, pkg);
+        else loadAsDirectory(res, function (err, d, pkg) {
+            if (err) cb(err);
+            else if (d) {
+                maybeRealpath(realpath, d, opts, function (err, realD) {
+                    if (err) {
+                        cb(err);
+                    } else {
+                        cb(null, realD, pkg);
+                    }
+                });
+            } else {
+                var moduleError = new Error("Cannot find module '" + x + "' from '" + parent + "'");
+                moduleError.code = 'MODULE_NOT_FOUND';
+                cb(moduleError);
+            }
+        });
+    }
+
+    function loadAsFile(x, thePackage, callback) {
+        var loadAsFilePackage = thePackage;
+        var cb = callback;
+        if (typeof loadAsFilePackage === 'function') {
+            cb = loadAsFilePackage;
+            loadAsFilePackage = undefined;
+        }
+
+        var exts = [''].concat(extensions);
+        load(exts, x, loadAsFilePackage);
+
+        function load(exts, x, loadPackage) {
+            if (exts.length === 0) return cb(null, undefined, loadPackage);
+            var file = x + exts[0];
+
+            var pkg = loadPackage;
+            if (pkg) onpkg(null, pkg);
+            else loadpkg(path.dirname(file), onpkg);
+
+            function onpkg(err, pkg_, dir) {
+                pkg = pkg_;
+                if (err) return cb(err);
+                if (dir && pkg && opts.pathFilter) {
+                    var rfile = path.relative(dir, file);
+                    var rel = rfile.slice(0, rfile.length - exts[0].length);
+                    var r = opts.pathFilter(pkg, x, rel);
+                    if (r) return load(
+                        [''].concat(extensions.slice()),
+                        path.resolve(dir, r),
+                        pkg
+                    );
+                }
+                isFile(file, onex);
+            }
+            function onex(err, ex) {
+                if (err) return cb(err);
+                if (ex) return cb(null, file, pkg);
+                load(exts.slice(1), x, pkg);
+            }
+        }
+    }
+
+    function loadpkg(dir, cb) {
+        if (dir === '' || dir === '/') return cb(null);
+        if (process.platform === 'win32' && (/^\w:[/\\]*$/).test(dir)) {
+            return cb(null);
+        }
+        if ((/[/\\]node_modules[/\\]*$/).test(dir)) return cb(null);
+
+        maybeRealpath(realpath, dir, opts, function (unwrapErr, pkgdir) {
+            if (unwrapErr) return loadpkg(path.dirname(dir), cb);
+            var pkgfile = path.join(pkgdir, 'package.json');
+            isFile(pkgfile, function (err, ex) {
+                // on err, ex is false
+                if (!ex) return loadpkg(path.dirname(dir), cb);
+
+                readPackage(readFile, pkgfile, function (err, pkgParam) {
+                    if (err) cb(err);
+
+                    var pkg = pkgParam;
+
+                    if (pkg && opts.packageFilter) {
+                        pkg = opts.packageFilter(pkg, pkgfile);
+                    }
+                    cb(null, pkg, dir);
+                });
+            });
+        });
+    }
+
+    function loadAsDirectory(x, loadAsDirectoryPackage, callback) {
+        var cb = callback;
+        var fpkg = loadAsDirectoryPackage;
+        if (typeof fpkg === 'function') {
+            cb = fpkg;
+            fpkg = opts.package;
+        }
+
+        maybeRealpath(realpath, x, opts, function (unwrapErr, pkgdir) {
+            if (unwrapErr) return cb(unwrapErr);
+            var pkgfile = path.join(pkgdir, 'package.json');
+            isFile(pkgfile, function (err, ex) {
+                if (err) return cb(err);
+                if (!ex) return loadAsFile(path.join(x, 'index'), fpkg, cb);
+
+                readPackage(readFile, pkgfile, function (err, pkgParam) {
+                    if (err) return cb(err);
+
+                    var pkg = pkgParam;
+
+                    if (pkg && opts.packageFilter) {
+                        pkg = opts.packageFilter(pkg, pkgfile);
+                    }
+
+                    if (pkg && pkg.main) {
+                        if (typeof pkg.main !== 'string') {
+                            var mainError = new TypeError('package “' + pkg.name + '” `main` must be a string');
+                            mainError.code = 'INVALID_PACKAGE_MAIN';
+                            return cb(mainError);
+                        }
+                        if (pkg.main === '.' || pkg.main === './') {
+                            pkg.main = 'index';
+                        }
+                        loadAsFile(path.resolve(x, pkg.main), pkg, function (err, m, pkg) {
+                            if (err) return cb(err);
+                            if (m) return cb(null, m, pkg);
+                            if (!pkg) return loadAsFile(path.join(x, 'index'), pkg, cb);
+
+                            var dir = path.resolve(x, pkg.main);
+                            loadAsDirectory(dir, pkg, function (err, n, pkg) {
+                                if (err) return cb(err);
+                                if (n) return cb(null, n, pkg);
+                                loadAsFile(path.join(x, 'index'), pkg, cb);
+                            });
+                        });
+                        return;
+                    }
+
+                    loadAsFile(path.join(x, '/index'), pkg, cb);
+                });
+            });
+        });
+    }
+
+    function processDirs(cb, dirs) {
+        if (dirs.length === 0) return cb(null, undefined);
+        var dir = dirs[0];
+
+        isDirectory(path.dirname(dir), isdir);
+
+        function isdir(err, isdir) {
+            if (err) return cb(err);
+            if (!isdir) return processDirs(cb, dirs.slice(1));
+            loadAsFile(dir, opts.package, onfile);
+        }
+
+        function onfile(err, m, pkg) {
+            if (err) return cb(err);
+            if (m) return cb(null, m, pkg);
+            loadAsDirectory(dir, opts.package, ondir);
+        }
+
+        function ondir(err, n, pkg) {
+            if (err) return cb(err);
+            if (n) return cb(null, n, pkg);
+            processDirs(cb, dirs.slice(1));
+        }
+    }
+    function loadNodeModules(x, start, cb) {
+        var thunk = function () { return getPackageCandidates(x, start, opts); };
+        processDirs(
+            cb,
+            packageIterator ? packageIterator(x, start, thunk, opts) : thunk()
+        );
+    }
+};
+
+},{"./caller":17,"./node-modules-paths":21,"./normalize-options":22,"fs":"fs","is-core-module":12,"path":"path"}],17:[function(require,module,exports){
+module.exports = function () {
+    // see https://code.google.com/p/v8/wiki/JavaScriptStackTraceApi
+    var origPrepareStackTrace = Error.prepareStackTrace;
+    Error.prepareStackTrace = function (_, stack) { return stack; };
+    var stack = (new Error()).stack;
+    Error.prepareStackTrace = origPrepareStackTrace;
+    return stack[2].getFileName();
+};
+
+},{}],18:[function(require,module,exports){
+arguments[4][11][0].apply(exports,arguments)
+},{"dup":11}],19:[function(require,module,exports){
+var current = (process.versions && process.versions.node && process.versions.node.split('.')) || [];
+
+function specifierIncluded(specifier) {
+    var parts = specifier.split(' ');
+    var op = parts.length > 1 ? parts[0] : '=';
+    var versionParts = (parts.length > 1 ? parts[1] : parts[0]).split('.');
+
+    for (var i = 0; i < 3; ++i) {
+        var cur = parseInt(current[i] || 0, 10);
+        var ver = parseInt(versionParts[i] || 0, 10);
+        if (cur === ver) {
+            continue; // eslint-disable-line no-restricted-syntax, no-continue
+        }
+        if (op === '<') {
+            return cur < ver;
+        } else if (op === '>=') {
+            return cur >= ver;
+        } else {
+            return false;
+        }
+    }
+    return op === '>=';
+}
+
+function matchesRange(range) {
+    var specifiers = range.split(/ ?&& ?/);
+    if (specifiers.length === 0) { return false; }
+    for (var i = 0; i < specifiers.length; ++i) {
+        if (!specifierIncluded(specifiers[i])) { return false; }
+    }
+    return true;
+}
+
+function versionIncluded(specifierValue) {
+    if (typeof specifierValue === 'boolean') { return specifierValue; }
+    if (specifierValue && typeof specifierValue === 'object') {
+        for (var i = 0; i < specifierValue.length; ++i) {
+            if (matchesRange(specifierValue[i])) { return true; }
+        }
+        return false;
+    }
+    return matchesRange(specifierValue);
+}
+
+var data = require('./core.json');
+
+var core = {};
+for (var mod in data) { // eslint-disable-line no-restricted-syntax
+    if (Object.prototype.hasOwnProperty.call(data, mod)) {
+        core[mod] = versionIncluded(data[mod]);
+    }
+}
+module.exports = core;
+
+},{"./core.json":18}],20:[function(require,module,exports){
+var isCoreModule = require('is-core-module');
+
+module.exports = function isCore(x) {
+    return isCoreModule(x);
+};
+
+},{"is-core-module":12}],21:[function(require,module,exports){
+var path = require('path');
+var parse = path.parse || require('path-parse');
+
+var getNodeModulesDirs = function getNodeModulesDirs(absoluteStart, modules) {
+    var prefix = '/';
+    if ((/^([A-Za-z]:)/).test(absoluteStart)) {
+        prefix = '';
+    } else if ((/^\\\\/).test(absoluteStart)) {
+        prefix = '\\\\';
+    }
+
+    var paths = [absoluteStart];
+    var parsed = parse(absoluteStart);
+    while (parsed.dir !== paths[paths.length - 1]) {
+        paths.push(parsed.dir);
+        parsed = parse(parsed.dir);
+    }
+
+    return paths.reduce(function (dirs, aPath) {
+        return dirs.concat(modules.map(function (moduleDir) {
+            return path.resolve(prefix, aPath, moduleDir);
+        }));
+    }, []);
+};
+
+module.exports = function nodeModulesPaths(start, opts, request) {
+    var modules = opts && opts.moduleDirectory
+        ? [].concat(opts.moduleDirectory)
+        : ['node_modules'];
+
+    if (opts && typeof opts.paths === 'function') {
+        return opts.paths(
+            request,
+            start,
+            function () { return getNodeModulesDirs(start, modules); },
+            opts
+        );
+    }
+
+    var dirs = getNodeModulesDirs(start, modules);
+    return opts && opts.paths ? dirs.concat(opts.paths) : dirs;
+};
+
+},{"path":"path","path-parse":14}],22:[function(require,module,exports){
+module.exports = function (x, opts) {
+    /**
+     * This file is purposefully a passthrough. It's expected that third-party
+     * environments will override it at runtime in order to inject special logic
+     * into `resolve` (by manipulating the options). One such example is the PnP
+     * code path in Yarn.
+     */
+
+    return opts || {};
+};
+
+},{}],23:[function(require,module,exports){
+var isCore = require('is-core-module');
+var fs = require('fs');
+var path = require('path');
+var caller = require('./caller');
+var nodeModulesPaths = require('./node-modules-paths');
+var normalizeOptions = require('./normalize-options');
+
+var realpathFS = fs.realpathSync && typeof fs.realpathSync.native === 'function' ? fs.realpathSync.native : fs.realpathSync;
+
+var defaultIsFile = function isFile(file) {
+    try {
+        var stat = fs.statSync(file);
+    } catch (e) {
+        if (e && (e.code === 'ENOENT' || e.code === 'ENOTDIR')) return false;
+        throw e;
+    }
+    return stat.isFile() || stat.isFIFO();
+};
+
+var defaultIsDir = function isDirectory(dir) {
+    try {
+        var stat = fs.statSync(dir);
+    } catch (e) {
+        if (e && (e.code === 'ENOENT' || e.code === 'ENOTDIR')) return false;
+        throw e;
+    }
+    return stat.isDirectory();
+};
+
+var defaultRealpathSync = function realpathSync(x) {
+    try {
+        return realpathFS(x);
+    } catch (realpathErr) {
+        if (realpathErr.code !== 'ENOENT') {
+            throw realpathErr;
+        }
+    }
+    return x;
+};
+
+var maybeRealpathSync = function maybeRealpathSync(realpathSync, x, opts) {
+    if (opts && opts.preserveSymlinks === false) {
+        return realpathSync(x);
+    }
+    return x;
+};
+
+var defaultReadPackageSync = function defaultReadPackageSync(readFileSync, pkgfile) {
+    var body = readFileSync(pkgfile);
+    try {
+        var pkg = JSON.parse(body);
+        return pkg;
+    } catch (jsonErr) {}
+};
+
+var getPackageCandidates = function getPackageCandidates(x, start, opts) {
+    var dirs = nodeModulesPaths(start, opts, x);
+    for (var i = 0; i < dirs.length; i++) {
+        dirs[i] = path.join(dirs[i], x);
+    }
+    return dirs;
+};
+
+module.exports = function resolveSync(x, options) {
+    if (typeof x !== 'string') {
+        throw new TypeError('Path must be a string.');
+    }
+    var opts = normalizeOptions(x, options);
+
+    var isFile = opts.isFile || defaultIsFile;
+    var readFileSync = opts.readFileSync || fs.readFileSync;
+    var isDirectory = opts.isDirectory || defaultIsDir;
+    var realpathSync = opts.realpathSync || defaultRealpathSync;
+    var readPackageSync = opts.readPackageSync || defaultReadPackageSync;
+    if (opts.readFileSync && opts.readPackageSync) {
+        throw new TypeError('`readFileSync` and `readPackageSync` are mutually exclusive.');
+    }
+    var packageIterator = opts.packageIterator;
+
+    var extensions = opts.extensions || ['.js'];
+    var includeCoreModules = opts.includeCoreModules !== false;
+    var basedir = opts.basedir || path.dirname(caller());
+    var parent = opts.filename || basedir;
+
+    opts.paths = opts.paths || [];
+
+    // ensure that `basedir` is an absolute path at this point, resolving against the process' current working directory
+    var absoluteStart = maybeRealpathSync(realpathSync, path.resolve(basedir), opts);
+
+    if ((/^(?:\.\.?(?:\/|$)|\/|([A-Za-z]:)?[/\\])/).test(x)) {
+        var res = path.resolve(absoluteStart, x);
+        if (x === '.' || x === '..' || x.slice(-1) === '/') res += '/';
+        var m = loadAsFileSync(res) || loadAsDirectorySync(res);
+        if (m) return maybeRealpathSync(realpathSync, m, opts);
+    } else if (includeCoreModules && isCore(x)) {
+        return x;
+    } else {
+        var n = loadNodeModulesSync(x, absoluteStart);
+        if (n) return maybeRealpathSync(realpathSync, n, opts);
+    }
+
+    var err = new Error("Cannot find module '" + x + "' from '" + parent + "'");
+    err.code = 'MODULE_NOT_FOUND';
+    throw err;
+
+    function loadAsFileSync(x) {
+        var pkg = loadpkg(path.dirname(x));
+
+        if (pkg && pkg.dir && pkg.pkg && opts.pathFilter) {
+            var rfile = path.relative(pkg.dir, x);
+            var r = opts.pathFilter(pkg.pkg, x, rfile);
+            if (r) {
+                x = path.resolve(pkg.dir, r); // eslint-disable-line no-param-reassign
+            }
+        }
+
+        if (isFile(x)) {
+            return x;
+        }
+
+        for (var i = 0; i < extensions.length; i++) {
+            var file = x + extensions[i];
+            if (isFile(file)) {
+                return file;
+            }
+        }
+    }
+
+    function loadpkg(dir) {
+        if (dir === '' || dir === '/') return;
+        if (process.platform === 'win32' && (/^\w:[/\\]*$/).test(dir)) {
+            return;
+        }
+        if ((/[/\\]node_modules[/\\]*$/).test(dir)) return;
+
+        var pkgfile = path.join(maybeRealpathSync(realpathSync, dir, opts), 'package.json');
+
+        if (!isFile(pkgfile)) {
+            return loadpkg(path.dirname(dir));
+        }
+
+        var pkg = readPackageSync(readFileSync, pkgfile);
+
+        if (pkg && opts.packageFilter) {
+            // v2 will pass pkgfile
+            pkg = opts.packageFilter(pkg, /*pkgfile,*/ dir); // eslint-disable-line spaced-comment
+        }
+
+        return { pkg: pkg, dir: dir };
+    }
+
+    function loadAsDirectorySync(x) {
+        var pkgfile = path.join(maybeRealpathSync(realpathSync, x, opts), '/package.json');
+        if (isFile(pkgfile)) {
+            try {
+                var pkg = readPackageSync(readFileSync, pkgfile);
+            } catch (e) {}
+
+            if (pkg && opts.packageFilter) {
+                // v2 will pass pkgfile
+                pkg = opts.packageFilter(pkg, /*pkgfile,*/ x); // eslint-disable-line spaced-comment
+            }
+
+            if (pkg && pkg.main) {
+                if (typeof pkg.main !== 'string') {
+                    var mainError = new TypeError('package “' + pkg.name + '” `main` must be a string');
+                    mainError.code = 'INVALID_PACKAGE_MAIN';
+                    throw mainError;
+                }
+                if (pkg.main === '.' || pkg.main === './') {
+                    pkg.main = 'index';
+                }
+                try {
+                    var m = loadAsFileSync(path.resolve(x, pkg.main));
+                    if (m) return m;
+                    var n = loadAsDirectorySync(path.resolve(x, pkg.main));
+                    if (n) return n;
+                } catch (e) {}
+            }
+        }
+
+        return loadAsFileSync(path.join(x, '/index'));
+    }
+
+    function loadNodeModulesSync(x, start) {
+        var thunk = function () { return getPackageCandidates(x, start, opts); };
+        var dirs = packageIterator ? packageIterator(x, start, thunk, opts) : thunk();
+
+        for (var i = 0; i < dirs.length; i++) {
+            var dir = dirs[i];
+            if (isDirectory(path.dirname(dir))) {
+                var m = loadAsFileSync(dir);
+                if (m) return m;
+                var n = loadAsDirectorySync(dir);
+                if (n) return n;
+            }
+        }
+    }
+};
+
+},{"./caller":17,"./node-modules-paths":21,"./normalize-options":22,"fs":"fs","is-core-module":12,"path":"path"}],24:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -1313,7 +2640,7 @@ class BeelderAction {
 exports.default = BeelderAction;
 BeelderAction.actionName = void 0;
 
-},{}],9:[function(require,module,exports){
+},{}],25:[function(require,module,exports){
 "use strict";
 
 var _interopRequireDefault = require("@babel/runtime/helpers/interopRequireDefault");
@@ -1431,7 +2758,7 @@ AsyncEventEmitter.PRIORITY_MONITOR = 2;
 AsyncEventEmitter.PRIORITY_NORMAL = 1;
 AsyncEventEmitter.PRIORITY_HIGH = 0;
 
-},{"@babel/runtime/helpers/interopRequireDefault":1,"util":"util"}],10:[function(require,module,exports){
+},{"@babel/runtime/helpers/interopRequireDefault":1,"util":"util"}],26:[function(require,module,exports){
 "use strict";
 
 var _interopRequireDefault = require("@babel/runtime/helpers/interopRequireDefault");
@@ -1476,7 +2803,7 @@ class BaseAction extends _action.default {
 
 exports.default = BaseAction;
 
-},{"./action":8,"./reference":27,"@babel/runtime/helpers/interopRequireDefault":1}],11:[function(require,module,exports){
+},{"./action":24,"./reference":43,"@babel/runtime/helpers/interopRequireDefault":1}],27:[function(require,module,exports){
 "use strict";
 
 var _interopRequireDefault = require("@babel/runtime/helpers/interopRequireDefault");
@@ -1506,25 +2833,32 @@ var _createShaderLibrary = _interopRequireDefault(require("./schemes/create-shad
 
 var _compileScss = _interopRequireDefault(require("./schemes/compile-scss"));
 
+var _delete = _interopRequireDefault(require("./schemes/delete"));
+
 class Beelder {
   constructor(config, projectRoot) {
-    var _config$cacheDirector;
+    var _this$config$cacheDir;
 
     this.config = void 0;
-    this.schemes = new Map();
-    this.targetMap = new Map();
-    this.referenceMap = new Map();
+    this.schemes = void 0;
+    this.targetMap = void 0;
+    this.referenceMap = void 0;
     this.projectRoot = void 0;
     this.cacheDirectory = void 0;
     this.cache = void 0;
     this.config = config;
     this.projectRoot = projectRoot !== null && projectRoot !== void 0 ? projectRoot : '/';
-    this.cacheDirectory = _path.default.resolve(this.projectRoot, (_config$cacheDirector = config.cacheDirectory) !== null && _config$cacheDirector !== void 0 ? _config$cacheDirector : "beelder-cache");
+    this.cacheDirectory = _path.default.resolve(this.projectRoot, (_this$config$cacheDir = this.config.cacheDirectory) !== null && _this$config$cacheDir !== void 0 ? _this$config$cacheDir : "beelder-cache");
     this.cache = new _buildCache.default(this.cacheDirectory);
-    this.loadSchemes();
   }
 
   loadSchemes() {
+    _timings.default.begin("Initializing Beelder");
+
+    this.schemes = new Map();
+    this.targetMap = new Map();
+    this.referenceMap = new Map();
+
     for (let [name, scheme] of Object.entries(this.config.schemes)) {
       this.schemes.set(name, new _scheme.default(name, scheme, this));
     }
@@ -1535,6 +2869,8 @@ class Beelder {
         this.referenceMap.set(target.getDefinedTarget(), target);
       }
     }
+
+    _timings.default.end();
   }
 
   static registerAction(actionClass) {
@@ -1542,6 +2878,7 @@ class Beelder {
   }
 
   async runScheme(schemeName) {
+    if (!this.schemes) this.loadSchemes();
     let scheme = this.schemes.get(schemeName);
     if (!scheme) throw new Error("No such scheme: '" + schemeName + "'");
 
@@ -1566,6 +2903,7 @@ class Beelder {
   }
 
   enqueueScheme(list, scheme, stack) {
+    if (list.indexOf(scheme) != -1) return;
     let dependencies = scheme.getDependencies();
 
     if (stack.indexOf(scheme) != -1) {
@@ -1622,8 +2960,9 @@ Beelder.registerAction(_copy.default);
 Beelder.registerAction(_textureAtlas.default);
 Beelder.registerAction(_createShaderLibrary.default);
 Beelder.registerAction(_compileScss.default);
+Beelder.registerAction(_delete.default);
 
-},{"./build-cache":12,"./scheme":28,"./schemes/bundle-javascript":29,"./schemes/compile-scss":30,"./schemes/copy":31,"./schemes/create-shader-library":32,"./schemes/texture-atlas":33,"./timings":34,"@babel/runtime/helpers/interopRequireDefault":1,"chalk":"chalk","path":"path"}],12:[function(require,module,exports){
+},{"./build-cache":28,"./scheme":44,"./schemes/bundle-javascript":45,"./schemes/compile-scss":46,"./schemes/copy":47,"./schemes/create-shader-library":48,"./schemes/delete":49,"./schemes/texture-atlas":50,"./timings":51,"@babel/runtime/helpers/interopRequireDefault":1,"chalk":"chalk","path":"path"}],28:[function(require,module,exports){
 "use strict";
 
 var _interopRequireDefault = require("@babel/runtime/helpers/interopRequireDefault");
@@ -1681,7 +3020,7 @@ class BuildCache {
     try {
       let data = JSON.stringify(json);
 
-      _fs.default.writeFileSync(this.cacheFilePath, data);
+      _fs.default.writeFileSync(this.cacheFilePath, data, "utf8");
     } catch (error) {
       console.error("Could not save cache file for section " + this.sectionPath);
       console.error(error.message);
@@ -1727,7 +3066,7 @@ class BuildCache {
 
 exports.default = BuildCache;
 
-},{"./utils":35,"@babel/runtime/helpers/interopRequireDefault":1,"fs":"fs","path":"path"}],13:[function(require,module,exports){
+},{"./utils":52,"@babel/runtime/helpers/interopRequireDefault":1,"fs":"fs","path":"path"}],29:[function(require,module,exports){
 "use strict";
 
 var _interopRequireDefault = require("@babel/runtime/helpers/interopRequireDefault");
@@ -1809,7 +3148,7 @@ class EventHandlerBlock {
 
 exports.default = EventHandlerBlock;
 
-},{"@babel/runtime/helpers/interopRequireDefault":1,"util":"util"}],14:[function(require,module,exports){
+},{"@babel/runtime/helpers/interopRequireDefault":1,"util":"util"}],30:[function(require,module,exports){
 "use strict";
 
 var _interopRequireDefault = require("@babel/runtime/helpers/interopRequireDefault");
@@ -1844,7 +3183,7 @@ BundlerPluginFactory.register(_jsonCommentReplacer.default);
 BundlerPluginFactory.register(_base.default);
 BundlerPluginFactory.register(_resourcePlugin.default);
 
-},{"./plugins/base":24,"./plugins/json-comment-replacer":25,"./plugins/resource-plugin":26,"@babel/runtime/helpers/interopRequireDefault":1}],15:[function(require,module,exports){
+},{"./plugins/base":40,"./plugins/json-comment-replacer":41,"./plugins/resource-plugin":42,"@babel/runtime/helpers/interopRequireDefault":1}],31:[function(require,module,exports){
 "use strict";
 
 var _interopRequireDefault = require("@babel/runtime/helpers/interopRequireDefault");
@@ -1931,7 +3270,7 @@ class BundlerPlugin extends _events.default {
 
 exports.default = BundlerPlugin;
 
-},{"@babel/runtime/helpers/interopRequireDefault":1,"events":"events"}],16:[function(require,module,exports){
+},{"@babel/runtime/helpers/interopRequireDefault":1,"events":"events"}],32:[function(require,module,exports){
 "use strict";
 
 var _interopRequireWildcard = require("@babel/runtime/helpers/interopRequireWildcard");
@@ -1955,21 +3294,35 @@ var _packer = _interopRequireDefault(require("./packer/packer"));
 
 var _ = require("..");
 
+var _stream = require("stream");
+
+var _browserPack = _interopRequireDefault(require("browser-pack"));
+
+var _packerProjectStorage = _interopRequireDefault(require("./packer/packer-project-storage"));
+
 // @ts-ignore
 
 /**
  * A class that generalises TypeScript compilation.
  */
 class Bundler {
+  // Cache files should not me modified by
+  // anyone else, so we can avoid file modification
+  // date check. It would even break everything
   constructor(config) {
     this.config = void 0;
     this.plugins = [];
     this.packer = void 0;
     this.scheme = void 0;
+    this.buildTargetDataStorage = void 0;
     this.config = config;
-    if (!this.config.extensions) this.config.extensions = [".ts", ".ts", ".json"];
+    if (!this.config.extensions) this.config.extensions = [".js", ".ts", ".json"];
     if (!this.config.babelSourceType) this.config.babelSourceType = "module";
     if (!this.config.babelPresets) this.config.babelPresets = this.getDefaultBabelifyPresets();
+    let cacheSection = this.config.cache.getSection("target-metadata");
+    this.buildTargetDataStorage = new _packerProjectStorage.default(cacheSection, {
+      skipFileModificationDateCheck: true
+    });
     this.scheme = config.scheme;
     this.packer = this.createPacker();
     this.loadPlugins();
@@ -1995,7 +3348,8 @@ class Bundler {
         sourceMaps: this.config.generateSourceMaps,
         sourceType: this.config.babelSourceType
       },
-      extensions: this.config.extensions
+      extensions: this.config.extensions,
+      includeExternalModules: this.config.includeExternalModules
     });
   }
 
@@ -2007,18 +3361,71 @@ class Bundler {
   }
 
   async build() {
+    let projectUpdated = await this.packer.rebuildSubtree(this.config.source);
+
     if (this.config.destination) {
-      let stream = await this.packer.bundleSubtree(this.config.source);
-      await this.listen(stream); //stream.pipe(fs.createWriteStream(this.config.destination))
-    } else {
-      await this.packer.rebuildSubtree(this.config.source);
-    }
+      let entries = await this.packer.bundleSubtree(this.config.source);
+      if (!entries) return;
+      if (!this.bundleFilesUpdated(entries) && !projectUpdated) return;
+
+      _.Timings.begin("Collapsing module identifiers");
+
+      _packer.default.collapseBundleIDs(entries);
+
+      _.Timings.end();
+
+      _.Timings.begin("Writing bundle");
+
+      let stream = _stream.Readable.from(entries).pipe((0, _browserPack.default)({
+        raw: true
+      }));
+
+      await this.listen(stream);
+
+      _.Timings.end();
+    } else if (!projectUpdated) return;
 
     _.Timings.begin("Saving cache");
 
     await this.packer.cache.saveCaches();
 
     _.Timings.end();
+  }
+
+  bundleFilesUpdated(entries) {
+    let result = false;
+    let cache = this.buildTargetDataStorage.accessFileData(this.config.destination);
+
+    if (!cache.bundleFiles) {
+      cache.bundleFiles = {};
+      result = true;
+    }
+
+    for (let entry of entries) {
+      let globalPath = entry.globalPath;
+      let rebuildDate = this.packer.getFile(globalPath).getRebuildDate();
+      let fileInfo = cache.bundleFiles[globalPath];
+
+      if (!fileInfo) {
+        cache.bundleFiles[globalPath] = {
+          modificationDate: rebuildDate
+        };
+        result = true;
+        continue;
+      }
+
+      if (rebuildDate > fileInfo.modificationDate) {
+        fileInfo.modificationDate = rebuildDate;
+        result = true;
+      }
+    }
+
+    if (result) {
+      this.buildTargetDataStorage.writeFileData(this.config.destination, cache);
+      this.buildTargetDataStorage.save();
+    }
+
+    return result;
   }
 
   getBabelPluginList() {
@@ -2086,7 +3493,7 @@ class Bundler {
 
 exports.default = Bundler;
 
-},{"..":"index.ts","../utils":35,"./bundler-plugin-factory":14,"./packer/packer":23,"@babel/runtime/helpers/interopRequireDefault":1,"@babel/runtime/helpers/interopRequireWildcard":2,"exorcist":"exorcist","fs":"fs"}],17:[function(require,module,exports){
+},{"..":"index.ts","../utils":52,"./bundler-plugin-factory":30,"./packer/packer":39,"./packer/packer-project-storage":37,"@babel/runtime/helpers/interopRequireDefault":1,"@babel/runtime/helpers/interopRequireWildcard":2,"browser-pack":"browser-pack","exorcist":"exorcist","fs":"fs","stream":"stream"}],33:[function(require,module,exports){
 "use strict";
 
 var _interopRequireDefault = require("@babel/runtime/helpers/interopRequireDefault");
@@ -2100,7 +3507,7 @@ var _path = _interopRequireDefault(require("path"));
 
 var _traverse = _interopRequireDefault(require("@babel/traverse"));
 
-var _fs = _interopRequireDefault(require("fs"));
+var _browserResolve = _interopRequireDefault(require("browser-resolve"));
 
 class PackerASTWatcher {
   constructor(config) {
@@ -2109,47 +3516,32 @@ class PackerASTWatcher {
   }
 
   getErrorWithMessage(message, filePath, location) {
-    return new Error(message + " at " + _path.default.relative(this.config.packer.bundler.config.projectRoot, filePath) + ":" + location.line);
+    let relativePath = _path.default.relative(this.config.packer.bundler.config.projectRoot, filePath);
+
+    if (location) {
+      return new Error(message + " at " + relativePath + ":" + location.line);
+    } else {
+      return new Error(message + " at " + relativePath);
+    }
   }
 
-  guessFilePath(filePath) {
-    let fileExtension = _path.default.extname(filePath);
-
-    if (fileExtension) {
-      if (_fs.default.existsSync(filePath)) {
-        return filePath;
-      }
-
-      return null;
-    }
-
-    for (let extension of this.config.extensions) {
-      let extendedPath = filePath + extension;
-
-      if (_fs.default.existsSync(extendedPath)) {
-        return extendedPath;
-      }
-    }
-
-    return null;
+  guessFilePath(dependency, filePath) {
+    return _browserResolve.default.sync(dependency, {
+      filename: filePath,
+      extensions: this.config.extensions
+    });
   }
 
   findDependencies(ast, filePath) {
-    let dirname = _path.default.dirname(filePath);
-
     let dependencies = {};
 
     const addDependency = (dependency, node) => {
-      if (dependency.startsWith('.')) {
-        let fullPath = _path.default.join(dirname, dependency);
-
-        fullPath = this.guessFilePath(fullPath);
-
-        if (!fullPath) {
-          throw this.getErrorWithMessage("No such file: " + dependency, filePath, node.loc.start);
+      if (this.config.packer.shouldWalkFile(dependency)) {
+        try {
+          dependencies[dependency] = this.guessFilePath(dependency, filePath);
+        } catch (e) {
+          throw this.getErrorWithMessage("No such file: " + dependency, filePath, node.loc && node.loc.start);
         }
-
-        dependencies[dependency] = fullPath;
       } else {
         dependencies[dependency] = dependency;
       }
@@ -2175,7 +3567,7 @@ class PackerASTWatcher {
 
 exports.default = PackerASTWatcher;
 
-},{"@babel/runtime/helpers/interopRequireDefault":1,"@babel/traverse":"@babel/traverse","fs":"fs","path":"path"}],18:[function(require,module,exports){
+},{"@babel/runtime/helpers/interopRequireDefault":1,"@babel/traverse":"@babel/traverse","browser-resolve":6,"path":"path"}],34:[function(require,module,exports){
 "use strict";
 
 var _interopRequireDefault = require("@babel/runtime/helpers/interopRequireDefault");
@@ -2216,15 +3608,15 @@ class PackerCache {
   }
 
   async saveCaches() {
-    await this.fastStorage.save(); // await this.largeStorage.save() - unused
-    // await this.astStorage.save() - unused. AST storage also will only be saved when file is rebuilt
+    await this.fastStorage.save(); // await this.largeStorage.save() - This will do nothing
+    // await this.astStorage.save() - And this too. AST storage also will only be saved when file is rebuilt
   }
 
 }
 
 exports.default = PackerCache;
 
-},{"./packer-file-storage":19,"./packer-project-storage":21,"@babel/runtime/helpers/interopRequireDefault":1}],19:[function(require,module,exports){
+},{"./packer-file-storage":35,"./packer-project-storage":37,"@babel/runtime/helpers/interopRequireDefault":1}],35:[function(require,module,exports){
 "use strict";
 
 var _interopRequireDefault = require("@babel/runtime/helpers/interopRequireDefault");
@@ -2278,7 +3670,7 @@ class PackerFileStorage extends _packerStorage.default {
 
 exports.default = PackerFileStorage;
 
-},{"../../build-cache":12,"../../utils":35,"./packer-storage":22,"@babel/runtime/helpers/interopRequireDefault":1}],20:[function(require,module,exports){
+},{"../../build-cache":28,"../../utils":52,"./packer-storage":38,"@babel/runtime/helpers/interopRequireDefault":1}],36:[function(require,module,exports){
 "use strict";
 
 var _interopRequireDefault = require("@babel/runtime/helpers/interopRequireDefault");
@@ -2326,10 +3718,19 @@ class PackerFile {
     this.projectPath = void 0;
     this.packer = void 0;
     this.ast = void 0;
+    this.shouldBeCompiled = void 0;
+    this.isJSON = void 0;
+    this.inOriginalPackage = void 0;
     this.packer = packer;
     this.filePath = filePath;
     this.projectPath = _path.default.relative(this.packer.bundler.config.projectRoot, filePath);
-    this.fastStorage = this.packer.cache.fastStorage.accessFileData(this.filePath);
+    this.fastStorage = this.packer.cache.fastStorage.accessFileData(this.filePath); // TODO: make this more smart
+
+    let extension = _path.default.extname(this.projectPath);
+
+    this.shouldBeCompiled = extension == ".ts" || extension == ".js";
+    this.inOriginalPackage = !this.projectPath.startsWith("..") && this.projectPath.indexOf("node_modules") == -1;
+    this.isJSON = extension == ".json";
   }
   /**
    * Fetch file dependencies with most efficient available way
@@ -2372,8 +3773,16 @@ class PackerFile {
 
   compile() {
     let contents = this.getContents();
-    let transformed = this.packer.transformFile(contents, this.projectPath);
-    return transformed.ast;
+
+    if (this.shouldBeCompiled) {
+      if (this.inOriginalPackage) {
+        return this.packer.transformFile(contents, this.projectPath).ast;
+      } else {
+        return this.packer.parseFile(contents, this.projectPath);
+      }
+    } else {
+      return null;
+    }
   }
   /**
    * Fetch AST tree for this file after babel-transformed file
@@ -2443,7 +3852,16 @@ class PackerFile {
 
   getTransformedCode() {
     if (this.fastStorage.code) return this.fastStorage.code;
-    this.fastStorage.code = this.packer.generateCode(this.getAST(), this.projectPath, this.getContents());
+
+    if (this.shouldBeCompiled) {
+      this.fastStorage.code = this.packer.generateCode(this.getAST(), this.projectPath, this.getContents());
+    } else if (this.isJSON) {
+      this.fastStorage.code = "module.exports = " + this.getContents();
+    } else {
+      this.fastStorage.code = this.getContents();
+    }
+
+    this.fastStorage.rebuildDate = Date.now();
     return this.fastStorage.code;
   }
   /**
@@ -2454,10 +3872,16 @@ class PackerFile {
 
   clearCodeCache() {
     this.fastStorage.code = null;
+    this.fastStorage.rebuildDate = 0;
   }
 
   determineDependencies() {
-    return this.packer.astWatcher.findDependencies(this.getAST(true), this.filePath);
+    // Ignoring cache here to avoid unnecessary querying
+    // of the file system. This method is called only
+    // when cache is outdated or missing.
+    let ast = this.getAST(true);
+    if (!ast) return {};
+    return this.packer.astWatcher.findDependencies(ast, this.filePath);
   }
 
   getFastPluginStorage(plugin) {
@@ -2479,11 +3903,15 @@ class PackerFile {
     return !!this.fastStorage.dependencies;
   }
 
+  getRebuildDate() {
+    return this.fastStorage.rebuildDate || 0;
+  }
+
 }
 
 exports.default = PackerFile;
 
-},{"@babel/runtime/helpers/interopRequireDefault":1,"fs":"fs","path":"path"}],21:[function(require,module,exports){
+},{"@babel/runtime/helpers/interopRequireDefault":1,"fs":"fs","path":"path"}],37:[function(require,module,exports){
 "use strict";
 
 var _interopRequireDefault = require("@babel/runtime/helpers/interopRequireDefault");
@@ -2498,9 +3926,11 @@ var _packerStorage = _interopRequireDefault(require("./packer-storage"));
 var _buildCache = _interopRequireDefault(require("../../build-cache"));
 
 class PackerProjectStorage extends _packerStorage.default {
-  constructor(...args) {
-    super(...args);
+  constructor(cache, config = {}) {
+    super(cache);
     this.cachedJSON = null;
+    this.config = void 0;
+    this.config = config;
   }
 
   getSection() {
@@ -2512,16 +3942,19 @@ class PackerProjectStorage extends _packerStorage.default {
 
   accessFileData(filePath) {
     let section = this.getSection();
+    let data = null;
 
-    if (_buildCache.default.fileRequiresRefresh(section.files, filePath)) {
-      let object = {};
-
-      _buildCache.default.refreshFileData(section.files, filePath, object);
-
-      return object;
+    if (this.config.skipFileModificationDateCheck || !_buildCache.default.fileRequiresRefresh(section.files, filePath)) {
+      data = _buildCache.default.getFileData(section.files, filePath);
     }
 
-    return _buildCache.default.getFileData(section.files, filePath);
+    if (!data) {
+      data = {};
+
+      _buildCache.default.refreshFileData(section.files, filePath, data);
+    }
+
+    return data;
   }
 
   save() {
@@ -2538,7 +3971,7 @@ class PackerProjectStorage extends _packerStorage.default {
 
 exports.default = PackerProjectStorage;
 
-},{"../../build-cache":12,"./packer-storage":22,"@babel/runtime/helpers/interopRequireDefault":1}],22:[function(require,module,exports){
+},{"../../build-cache":28,"./packer-storage":38,"@babel/runtime/helpers/interopRequireDefault":1}],38:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -2559,7 +3992,7 @@ class PackerStorage {
 
 exports.default = PackerStorage;
 
-},{}],23:[function(require,module,exports){
+},{}],39:[function(require,module,exports){
 "use strict";
 
 var _interopRequireDefault = require("@babel/runtime/helpers/interopRequireDefault");
@@ -2575,17 +4008,11 @@ var babel = _interopRequireWildcard(require("@babel/core"));
 
 var _path = _interopRequireDefault(require("path"));
 
-var _traverse = _interopRequireDefault(require("@babel/traverse"));
-
 var _generator = _interopRequireDefault(require("@babel/generator"));
-
-var _browserPack = _interopRequireDefault(require("browser-pack"));
 
 var _index = require("../../index");
 
 var _asyncEventEmitter = _interopRequireDefault(require("../../async-event-emitter"));
-
-var _stream = require("stream");
 
 var _packerCache = _interopRequireDefault(require("./packer-cache"));
 
@@ -2598,6 +4025,7 @@ class TraverseContext {
     this.metFiles = new Set();
     this.cachedEntriesLoaded = 0;
     this.rebuiltEntries = 0;
+    this.onlyCompilableFiles = true;
   }
 
 }
@@ -2637,6 +4065,12 @@ class Packer extends _asyncEventEmitter.default {
     });
     this.babelConfigGenerated = false;
   }
+
+  updateBabelConfig(filePath) {
+    if (!this.babelConfigGenerated) this.generateConfig();
+    this.babelConfig.options.filename = filePath;
+    this.babelConfig.options.sourceFileName = filePath;
+  }
   /**
    * Transforms given data with provided sourcemap filename
    * @param data Source code to transform
@@ -2645,13 +4079,13 @@ class Packer extends _asyncEventEmitter.default {
 
 
   transformFile(data, filePath) {
-    if (!this.babelConfigGenerated) {
-      this.generateConfig();
-    }
-
-    this.babelConfig.options.filename = filePath;
-    this.babelConfig.options.sourceFileName = filePath;
+    this.updateBabelConfig(filePath);
     return babel.transformSync(data, this.babelConfig.options);
+  }
+
+  parseFile(data, filePath) {
+    this.updateBabelConfig(filePath);
+    return babel.parseSync(data, this.babelConfig.options);
   }
 
   generateConfig() {
@@ -2690,28 +4124,25 @@ class Packer extends _asyncEventEmitter.default {
   }
 
   async bundleSubtree(entry) {
-    await this.rebuildSubtree(entry);
     let context = new PackerBuildContext();
+    context.onlyCompilableFiles = false;
     await this.traverse(entry, context, (filePath, data) => {
       context.bundleCache.push({
         id: filePath,
         source: data.getTransformedCode(),
         deps: Object.assign({}, data.getDependencies()),
         entry: context.bundleCache.length == 0,
-        sourceFile: _path.default.relative(this.bundler.config.projectRoot, filePath)
+        sourceFile: _path.default.relative(this.bundler.config.projectRoot, filePath),
+        globalPath: filePath
       });
     });
-
-    _index.Timings.begin("Collapsing bundle identifiers");
-
-    this.collapseBundleIDs(context.bundleCache);
-
-    _index.Timings.end();
-
-    return _stream.Readable.from(context.bundleCache).pipe((0, _browserPack.default)({
-      raw: true
-    }));
+    return context.bundleCache;
   }
+  /**
+   * @param entry
+   * @returns true if at least one file was modified
+   */
+
 
   async rebuildSubtree(entry) {
     _index.Timings.begin("Rebuilding files");
@@ -2721,9 +4152,11 @@ class Packer extends _asyncEventEmitter.default {
     await this.emit("after-build");
 
     _index.Timings.end("Finished rebuilding files (had to rebuild " + context.rebuiltEntries + " / " + (context.cachedEntriesLoaded + context.rebuiltEntries) + " files)");
+
+    return context.rebuiltEntries > 0;
   }
 
-  collapseBundleIDs(cache) {
+  static collapseBundleIDs(cache) {
     let fileNames = new Map();
     let fileIndex = 0;
 
@@ -2741,6 +4174,11 @@ class Packer extends _asyncEventEmitter.default {
       }
     }
   }
+  /**
+   * Get file meta-information and cache
+   * @param filePath global file path
+   */
+
 
   getFile(filePath) {
     let file = this.files.get(filePath);
@@ -2748,6 +4186,16 @@ class Packer extends _asyncEventEmitter.default {
     file = new _packerFile.default(this, filePath);
     this.files.set(filePath, file);
     return file;
+  }
+
+  shouldWalkFile(path) {
+    if (path.startsWith(".")) return true;
+
+    if (this.config.includeExternalModules === true) {
+      return true;
+    } else if (Array.isArray(this.config.includeExternalModules)) {
+      return this.config.includeExternalModules.indexOf(path) != -1;
+    }
   }
   /**
    * Traverses the project tree with given callback function
@@ -2784,9 +4232,9 @@ class Packer extends _asyncEventEmitter.default {
 
 
     for (let [name, absolute] of Object.entries(file.getDependencies())) {
-      if (name.startsWith(".")) {
-        await this.traverse(absolute, tempContext, callback);
-      }
+      if (!this.shouldWalkFile(name)) continue;
+      if (tempContext.onlyCompilableFiles && !this.getFile(absolute).shouldBeCompiled) continue;
+      await this.traverse(absolute, tempContext, callback);
     }
 
     return tempContext;
@@ -2796,7 +4244,7 @@ class Packer extends _asyncEventEmitter.default {
 
 exports.default = Packer;
 
-},{"../../async-event-emitter":9,"../../index":"index.ts","./packer-ast-watcher":17,"./packer-cache":18,"./packer-file":20,"@babel/core":"@babel/core","@babel/generator":"@babel/generator","@babel/runtime/helpers/interopRequireDefault":1,"@babel/runtime/helpers/interopRequireWildcard":2,"@babel/traverse":"@babel/traverse","browser-pack":"browser-pack","path":"path","stream":"stream"}],24:[function(require,module,exports){
+},{"../../async-event-emitter":25,"../../index":"index.ts","./packer-ast-watcher":33,"./packer-cache":34,"./packer-file":36,"@babel/core":"@babel/core","@babel/generator":"@babel/generator","@babel/runtime/helpers/interopRequireDefault":1,"@babel/runtime/helpers/interopRequireWildcard":2,"path":"path"}],40:[function(require,module,exports){
 "use strict";
 
 var _interopRequireDefault = require("@babel/runtime/helpers/interopRequireDefault");
@@ -2831,7 +4279,7 @@ class BasePlugin extends _bundlerPlugin.default {
 
 exports.default = BasePlugin;
 
-},{"../bundler-plugin":15,"@babel/runtime/helpers/interopRequireDefault":1}],25:[function(require,module,exports){
+},{"../bundler-plugin":31,"@babel/runtime/helpers/interopRequireDefault":1}],41:[function(require,module,exports){
 "use strict";
 
 var _interopRequireWildcard = require("@babel/runtime/helpers/interopRequireWildcard");
@@ -2946,7 +4394,7 @@ class CommentReplacerBundlerPlugin extends _bundlerPlugin.default {
   maybeReplace(path, fileCache) {
     let node = path.node;
 
-    if (node.properties.length !== 0 || node.innerComments.length !== 1) {
+    if (!node.properties || !node.innerComments || node.properties.length !== 0 || node.innerComments.length !== 1) {
       return;
     }
 
@@ -3003,7 +4451,7 @@ class CommentReplacerBundlerPlugin extends _bundlerPlugin.default {
 
 exports.default = CommentReplacerBundlerPlugin;
 
-},{"../..":"index.ts","../../event-handler-block":13,"../../reference":27,"../bundler-plugin":15,"@babel/parser":"@babel/parser","@babel/runtime/helpers/interopRequireDefault":1,"@babel/runtime/helpers/interopRequireWildcard":2,"@babel/traverse":"@babel/traverse","@babel/types":"@babel/types","fs":"fs"}],26:[function(require,module,exports){
+},{"../..":"index.ts","../../event-handler-block":29,"../../reference":43,"../bundler-plugin":31,"@babel/parser":"@babel/parser","@babel/runtime/helpers/interopRequireDefault":1,"@babel/runtime/helpers/interopRequireWildcard":2,"@babel/traverse":"@babel/traverse","@babel/types":"@babel/types","fs":"fs"}],42:[function(require,module,exports){
 "use strict";
 
 var _interopRequireDefault = require("@babel/runtime/helpers/interopRequireDefault");
@@ -3186,25 +4634,12 @@ class ResourcePlugin extends _bundlerPlugin.default {
     return result;
   }
 
-  getDependencies() {
-    let result = null;
-
-    for (let rule of this.rules) {
-      if (rule.target.isDependency) {
-        if (!result) result = [];
-        result.push(rule.target.getDependency());
-      }
-    }
-
-    return result;
-  }
-
 }
 
 exports.default = ResourcePlugin;
 ResourcePlugin.resourcePrefix = "@load-resource:";
 
-},{"../..":"index.ts","../../event-handler-block":13,"../../reference":27,"../../utils":35,"../bundler-plugin":15,"../packer/packer":23,"@babel/runtime/helpers/interopRequireDefault":1,"fs":"fs","minimatch":7,"path":"path"}],27:[function(require,module,exports){
+},{"../..":"index.ts","../../event-handler-block":29,"../../reference":43,"../../utils":52,"../bundler-plugin":31,"../packer/packer":39,"@babel/runtime/helpers/interopRequireDefault":1,"fs":"fs","minimatch":13,"path":"path"}],43:[function(require,module,exports){
 "use strict";
 
 var _interopRequireDefault = require("@babel/runtime/helpers/interopRequireDefault");
@@ -3279,7 +4714,7 @@ class BeelderReference {
 
 exports.default = BeelderReference;
 
-},{"@babel/runtime/helpers/interopRequireDefault":1,"chalk":"chalk"}],28:[function(require,module,exports){
+},{"@babel/runtime/helpers/interopRequireDefault":1,"chalk":"chalk"}],44:[function(require,module,exports){
 "use strict";
 
 var _interopRequireDefault = require("@babel/runtime/helpers/interopRequireDefault");
@@ -3295,19 +4730,37 @@ var _timings = _interopRequireDefault(require("./timings"));
 
 var _chalk = _interopRequireDefault(require("chalk"));
 
+var _reference = _interopRequireDefault(require("./reference"));
+
+var _utils = require("./utils");
+
 class BeelderScheme {
   constructor(name, config, beelder) {
     this.steps = [];
+    this.explicitTargets = [];
     this.config = void 0;
     this.beelder = void 0;
     this.name = void 0;
     this.name = name;
     this.beelder = beelder;
     this.config = config;
+    this.loadTargets();
     this.loadSteps();
   }
 
+  loadTargets() {
+    if (!this.config.targets) return;
+
+    for (let referenceConfig of this.config.targets) {
+      let reference = new _reference.default(referenceConfig);
+      if (!reference.definesTarget) throw new Error("References listed in 'targets' must define target");
+      this.explicitTargets.push(reference);
+    }
+  }
+
   loadSteps() {
+    if (!this.config.steps) return;
+
     for (let step of this.config.steps) {
       const ActionClass = _beelder.default.actions.get(step.action);
 
@@ -3324,13 +4777,7 @@ class BeelderScheme {
     let dependencies = [];
 
     for (let step of this.steps) {
-      const stepDependencies = step.getDependencies();
-
-      if (stepDependencies) {
-        for (let dep of stepDependencies) {
-          dependencies.push(dep);
-        }
-      }
+      dependencies = (0, _utils.concatOptionalArrays)(dependencies, step.getDependencies());
     }
 
     return dependencies;
@@ -3340,15 +4787,10 @@ class BeelderScheme {
     let targets = [];
 
     for (let step of this.steps) {
-      const stepTargets = step.getTargets();
-
-      if (stepTargets) {
-        for (let target of stepTargets) {
-          targets.push(target);
-        }
-      }
+      targets = (0, _utils.concatOptionalArrays)(targets, step.getTargets());
     }
 
+    targets = (0, _utils.concatOptionalArrays)(targets, this.explicitTargets);
     return targets;
   }
 
@@ -3368,7 +4810,7 @@ class BeelderScheme {
 
 exports.default = BeelderScheme;
 
-},{"./beelder":11,"./timings":34,"@babel/runtime/helpers/interopRequireDefault":1,"chalk":"chalk"}],29:[function(require,module,exports){
+},{"./beelder":27,"./reference":43,"./timings":51,"./utils":52,"@babel/runtime/helpers/interopRequireDefault":1,"chalk":"chalk"}],45:[function(require,module,exports){
 "use strict";
 
 var _interopRequireDefault = require("@babel/runtime/helpers/interopRequireDefault");
@@ -3386,6 +4828,18 @@ var _bundler = _interopRequireDefault(require("../javascript-bundler/bundler"));
 
 var _utils = require("../utils");
 
+/**
+ * The class that implements bundle-javascript beelder action.
+ * This action may be used multiple times in single build action.
+ * If "target" field is omitted, project will be rebuilt in order
+ * to update caches.
+ *
+ * The following parameters must be the same in all dependent
+ * configurations (which share common source files):
+ * - `compilerOptions.babelPlugins`
+ * - `compilerOptions.babelPresets`
+ * - `compilerOptions.babelSourceType`
+ */
 class BundleJavascriptAction extends _baseScheme.default {
   constructor(config, scheme) {
     super(config, scheme);
@@ -3441,7 +4895,7 @@ class BundleJavascriptAction extends _baseScheme.default {
 exports.default = BundleJavascriptAction;
 BundleJavascriptAction.actionName = "bundle-javascript";
 
-},{"../base-scheme":10,"../javascript-bundler/bundler":16,"../timings":34,"../utils":35,"@babel/runtime/helpers/interopRequireDefault":1}],30:[function(require,module,exports){
+},{"../base-scheme":26,"../javascript-bundler/bundler":32,"../timings":51,"../utils":52,"@babel/runtime/helpers/interopRequireDefault":1}],46:[function(require,module,exports){
 "use strict";
 
 var _interopRequireDefault = require("@babel/runtime/helpers/interopRequireDefault");
@@ -3455,6 +4909,21 @@ var _fs = _interopRequireDefault(require("fs"));
 
 var _baseScheme = _interopRequireDefault(require("../base-scheme"));
 
+var _buildCache = _interopRequireDefault(require("../build-cache"));
+
+var _nodeSass = _interopRequireDefault(require("node-sass"));
+
+var _utils = require("../utils");
+
+var _ = require("..");
+
+// TODOS:
+// Handle file read errors
+
+/**
+ * Scheme action which compiles all SCSS files from resource list
+ * into single CSS file.
+ */
 class CompileSCSSSchemeAction extends _baseScheme.default {
   constructor(config, scheme) {
     super(config, scheme);
@@ -3463,9 +4932,91 @@ class CompileSCSSSchemeAction extends _baseScheme.default {
   }
 
   async run() {
+    _.Timings.begin("Updating CSS resources");
+
     let source = this.scheme.beelder.resolveReference(this.source);
     let destination = this.scheme.beelder.resolveReference(this.target);
-    let resourceArray = JSON.parse(_fs.default.readFileSync(source, "utf8"));
+    let resourceFile = JSON.parse(_fs.default.readFileSync(source, "utf8"));
+    let resourceList = resourceFile.map(file => file[0]);
+    let cache = this.cache.getJSON();
+    if (!cache.files) cache.files = {};
+    if (!cache.resultCache) cache.resultCache = {};
+    let resultCache = cache.resultCache[destination];
+
+    if (!resultCache) {
+      resultCache = {};
+      cache.resultCache[destination] = resultCache;
+    }
+
+    let shouldUpdate = this.schemeFileCacheOutdated(resultCache, resourceList);
+    if (!shouldUpdate) shouldUpdate = this.anyFilesUpdated(cache.files, resourceList);
+
+    if (shouldUpdate) {
+      _.Timings.begin("Recompiling SCSS files");
+
+      if ((0, _utils.prepareFileLocation)(destination)) {
+        _fs.default.writeFileSync(destination, this.recompileFiles(resourceFile, cache.files), "utf8");
+      } else {
+        console.error("Could not create target directory. Please, check permissions");
+      }
+
+      resultCache.resourceList = resourceList;
+      this.cache.setJSON(cache);
+
+      _.Timings.end();
+    }
+
+    _.Timings.end();
+  }
+
+  schemeFileCacheOutdated(resultCache, resourceList) {
+    if (resultCache && resultCache.resourceList) {
+      return !(0, _utils.compareArrayValues)(resultCache.resourceList, resourceList);
+    }
+
+    return true;
+  }
+
+  anyFilesUpdated(fileCache, resourceList) {
+    for (let resource of resourceList) {
+      if (_buildCache.default.fileRequiresRefresh(fileCache, resource)) return true;
+    }
+
+    return false;
+  }
+
+  recompileFiles(resourceFile, fileCache) {
+    let compiledStylesheets = new Map();
+
+    for (let resourceInfo of resourceFile) {
+      let resourcePath = resourceInfo[0]; // TODO: print error if file does not exist
+      //let resourceReferences = resourceInfo[1]
+
+      let compiledSource;
+
+      if (_buildCache.default.fileRequiresRefresh(fileCache, resourcePath)) {
+        compiledSource = this.compileCSS(resourceInfo);
+
+        _buildCache.default.refreshFileData(fileCache, resourcePath, compiledSource);
+      } else {
+        compiledSource = _buildCache.default.getFileData(fileCache, resourcePath);
+      }
+
+      compiledStylesheets.set(resourcePath, compiledSource);
+    }
+
+    return Array.from(compiledStylesheets.values()).join("\n");
+  }
+
+  compileCSS(resourceInfo) {
+    let file = _fs.default.readFileSync(resourceInfo[0], "utf8");
+
+    let rendered = _nodeSass.default.renderSync({
+      data: file,
+      outputStyle: "expanded"
+    });
+
+    return rendered.css.toString("utf8");
   }
 
 }
@@ -3473,7 +5024,7 @@ class CompileSCSSSchemeAction extends _baseScheme.default {
 exports.default = CompileSCSSSchemeAction;
 CompileSCSSSchemeAction.actionName = "compile-scss";
 
-},{"../base-scheme":10,"@babel/runtime/helpers/interopRequireDefault":1,"fs":"fs"}],31:[function(require,module,exports){
+},{"..":"index.ts","../base-scheme":26,"../build-cache":28,"../utils":52,"@babel/runtime/helpers/interopRequireDefault":1,"fs":"fs","node-sass":"node-sass"}],47:[function(require,module,exports){
 "use strict";
 
 var _interopRequireDefault = require("@babel/runtime/helpers/interopRequireDefault");
@@ -3503,7 +5054,14 @@ class CopyAction extends _baseScheme.default {
 
     let source = this.scheme.beelder.resolveReference(this.source);
     let destination = this.scheme.beelder.resolveReference(this.target);
-    let sourceStat = await _fs.default.promises.stat(source);
+    let sourceStat;
+
+    try {
+      sourceStat = await _fs.default.promises.stat(source);
+    } catch (e) {
+      throw new Error("Copying failed: " + e.message);
+    }
+
     let dirname;
 
     if (destination.endsWith("/")) {
@@ -3533,7 +5091,7 @@ class CopyAction extends _baseScheme.default {
 exports.default = CopyAction;
 CopyAction.actionName = "copy";
 
-},{"../base-scheme":10,"../timings":34,"../utils":35,"@babel/runtime/helpers/interopRequireDefault":1,"fs":"fs","path":"path"}],32:[function(require,module,exports){
+},{"../base-scheme":26,"../timings":51,"../utils":52,"@babel/runtime/helpers/interopRequireDefault":1,"fs":"fs","path":"path"}],48:[function(require,module,exports){
 "use strict";
 
 var _interopRequireDefault = require("@babel/runtime/helpers/interopRequireDefault");
@@ -3549,6 +5107,8 @@ var _path = _interopRequireDefault(require("path"));
 
 var _baseScheme = _interopRequireDefault(require("../base-scheme"));
 
+var _utils = require("../utils");
+
 class CreateShaderLibraryAction extends _baseScheme.default {
   constructor(config, scheme) {
     super(config, scheme);
@@ -3563,7 +5123,8 @@ class CreateShaderLibraryAction extends _baseScheme.default {
     let library = {};
 
     for (let resourceInfo of resourceArray) {
-      let resourcePath = resourceInfo[0]; //let resourceReferences = resourceInfo[1]
+      let resourcePath = resourceInfo[0]; // TODO: print error if file does not exist
+      //let resourceReferences = resourceInfo[1]
 
       let absolutePath = _path.default.join(this.scheme.beelder.getAbsolutePath(resourcePath));
 
@@ -3572,7 +5133,11 @@ class CreateShaderLibraryAction extends _baseScheme.default {
 
     let code = JSON.stringify(library);
 
-    _fs.default.writeFileSync(destination, code, "utf8");
+    if ((0, _utils.prepareFileLocation)(destination)) {
+      _fs.default.writeFileSync(destination, code, "utf8");
+    } else {
+      console.error("Could not create target directory. Please, check permissions");
+    }
   }
 
 }
@@ -3580,7 +5145,60 @@ class CreateShaderLibraryAction extends _baseScheme.default {
 exports.default = CreateShaderLibraryAction;
 CreateShaderLibraryAction.actionName = "create-shader-library";
 
-},{"../base-scheme":10,"@babel/runtime/helpers/interopRequireDefault":1,"fs":"fs","path":"path"}],33:[function(require,module,exports){
+},{"../base-scheme":26,"../utils":52,"@babel/runtime/helpers/interopRequireDefault":1,"fs":"fs","path":"path"}],49:[function(require,module,exports){
+"use strict";
+
+var _interopRequireDefault = require("@babel/runtime/helpers/interopRequireDefault");
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports.default = void 0;
+
+var _fs = _interopRequireDefault(require("fs"));
+
+var _timings = _interopRequireDefault(require("../timings"));
+
+var _reference = _interopRequireDefault(require("../reference"));
+
+var _action = _interopRequireDefault(require("../action"));
+
+class DeleteAction extends _action.default {
+  constructor(config, scheme) {
+    super(config, scheme);
+    this.target = void 0;
+    this.target = new _reference.default(config.target);
+  }
+
+  deleteFile(file) {
+    try {
+      let stat = _fs.default.statSync(file);
+
+      if (stat.isDirectory()) {
+        _fs.default.rmdirSync(file, {
+          recursive: true
+        });
+      } else {
+        _fs.default.rmSync(file);
+      }
+    } catch (ignored) {}
+  }
+
+  async run() {
+    _timings.default.begin("Deleting " + this.target.getConsoleName());
+
+    let target = this.scheme.beelder.resolveReference(this.target);
+    this.deleteFile(target);
+
+    _timings.default.end();
+  }
+
+}
+
+exports.default = DeleteAction;
+DeleteAction.actionName = "delete";
+
+},{"../action":24,"../reference":43,"../timings":51,"@babel/runtime/helpers/interopRequireDefault":1,"fs":"fs"}],50:[function(require,module,exports){
 "use strict";
 
 var _interopRequireDefault = require("@babel/runtime/helpers/interopRequireDefault");
@@ -3832,7 +5450,7 @@ class TextureAtlasAction extends _baseScheme.default {
 exports.default = TextureAtlasAction;
 TextureAtlasAction.actionName = "texture-atlas";
 
-},{"../base-scheme":10,"../build-cache":12,"../timings":34,"../utils":35,"@babel/runtime/helpers/interopRequireDefault":1,"atlaspack":"atlaspack","canvas":"canvas","fs":"fs","path":"path"}],34:[function(require,module,exports){
+},{"../base-scheme":26,"../build-cache":28,"../timings":51,"../utils":52,"@babel/runtime/helpers/interopRequireDefault":1,"atlaspack":"atlaspack","canvas":"canvas","fs":"fs","path":"path"}],51:[function(require,module,exports){
 "use strict";
 
 var _interopRequireDefault = require("@babel/runtime/helpers/interopRequireDefault");
@@ -4004,7 +5622,7 @@ Timings.errPrefix = _chalk.default.red.bold("[ ERR ]") + _chalk.default.gray(": 
 Timings.timingColor = _chalk.default.cyan;
 Timings.stack = [];
 
-},{"@babel/runtime/helpers/interopRequireDefault":1,"chalk":"chalk","util":"util"}],35:[function(require,module,exports){
+},{"@babel/runtime/helpers/interopRequireDefault":1,"chalk":"chalk","util":"util"}],52:[function(require,module,exports){
 "use strict";
 
 var _interopRequireDefault = require("@babel/runtime/helpers/interopRequireDefault");
@@ -4117,7 +5735,7 @@ function copyDirectoryContents(from, to) {
     } else if (stat.isSymbolicLink()) {
       _fs.default.symlinkSync(_fs.default.readlinkSync(_path.default.join(from, element)), _path.default.join(to, element));
     } else if (stat.isDirectory()) {
-      this.copyDirectoryContents(_path.default.join(from, element), _path.default.join(to, element));
+      copyDirectoryContents(_path.default.join(from, element), _path.default.join(to, element));
     }
   }
 }
@@ -4250,6 +5868,6 @@ var _timings = _interopRequireDefault(require("./timings"));
 
 var _beelder = _interopRequireDefault(require("./beelder"));
 
-},{"./beelder":11,"./timings":34,"@babel/runtime/helpers/interopRequireDefault":1}]},{},[])("index.ts")
+},{"./beelder":27,"./timings":51,"@babel/runtime/helpers/interopRequireDefault":1}]},{},[])("index.ts")
 });
 //# sourceMappingURL=index.js.map

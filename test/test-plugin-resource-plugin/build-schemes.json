@@ -14,7 +14,7 @@
 						"pattern": "**/*.glsl",
 						"target": "#glsl-resources = cache/shaders/resources.json"
 					}, {
-						"pattern": "**/*.(css|scss)",
+						"pattern": "**/*.@(scss|css)",
 						"target": "#style-resources = cache/styles/resources.json"
 					}]
 				}]
@@ -25,11 +25,15 @@
 		"steps": [{
 			"action": "create-shader-library",
 			"source": "#glsl-resources",
-			"target": "#compiled-shaders = cache/styles/styles.css"
+			"target": "#compiled-shaders = cache/shaders/library.json"
 		}]
 	},
 	"generate-styles-library": {
-		"steps": []
+		"steps": [{
+			"action": "compile-scss",
+			"source": "#style-resources",
+			"target": "#compiled-scss = cache/styles/styles.css"
+		}]
 	},
 	"build": {
 		"steps": [{
@@ -48,6 +52,10 @@
 					}]
 				}]
 			}
+		}, {
+			"action": "copy",
+			"source": "#compiled-scss",
+			"target": "dist/style.css"
 		}]
 	}
 }}

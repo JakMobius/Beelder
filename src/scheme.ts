@@ -2,15 +2,18 @@ import Beelder, {BeelderActionConfig} from "./beelder";
 import BeelderAction from "./action";
 import Timings from "./timings";
 import Chalk from "chalk";
-import BeelderReference from "./reference";
+import BeelderReference, {BeelderReferenceConfig} from "./reference";
+import {concatOptionalArrays} from "./utils";
 
 export interface BeelderSchemeConfig {
     steps: [BeelderActionConfig]
+    targets: [BeelderReferenceConfig]
 }
 
 export default class BeelderScheme {
 
     public steps: BeelderAction[] = []
+    public explicitTargets: BeelderReference[] = []
     private config: BeelderSchemeConfig;
     public beelder: Beelder;
     public name: string;
@@ -19,10 +22,24 @@ export default class BeelderScheme {
         this.name = name
         this.beelder = beelder
         this.config = config
+
+        this.loadTargets()
         this.loadSteps()
     }
 
+    private loadTargets() {
+        if(!this.config.targets) return
+
+        for(let referenceConfig of this.config.targets) {
+            let reference = new BeelderReference(referenceConfig)
+            if(!reference.definesTarget) throw new Error("References listed in 'targets' must define target")
+            this.explicitTargets.push(reference)
+        }
+    }
+
     private loadSteps() {
+        if(!this.config.steps) return
+
         for(let step of this.config.steps) {
             const ActionClass = Beelder.actions.get(step.action)
             if(!ActionClass) {
@@ -37,12 +54,7 @@ export default class BeelderScheme {
         let dependencies: string[] = []
 
         for(let step of this.steps) {
-            const stepDependencies = step.getDependencies()
-            if(stepDependencies) {
-                for(let dep of stepDependencies) {
-                    dependencies.push(dep)
-                }
-            }
+            dependencies = concatOptionalArrays(dependencies, step.getDependencies())
         }
 
         return dependencies
@@ -52,13 +64,10 @@ export default class BeelderScheme {
         let targets: BeelderReference[] = []
 
         for(let step of this.steps) {
-            const stepTargets = step.getTargets()
-            if(stepTargets) {
-                for(let target of stepTargets) {
-                    targets.push(target)
-                }
-            }
+            targets = concatOptionalArrays(targets, step.getTargets())
         }
+
+        targets = concatOptionalArrays(targets, this.explicitTargets)
 
         return targets
     }

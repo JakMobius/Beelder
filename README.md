@@ -273,7 +273,7 @@ workarounds:
 
 1) First way is to not separate the project assembly scheme. 
    This approach makes it hard to keep your project scheme structured,
-   be as you will have to manually set the order of the assembly steps
+   as you will have to manually set the order of the assembly steps
 2) Second way is to use Beelder targets. 
 
 ### Using targets
@@ -316,7 +316,7 @@ Here is how to define target:
   // You now will be able to refer to "targetName": "compiled javascript" in other build schemes 
   "target": {
     "path": "cache/index.js",
-    "targetName": "compiled javascript"
+    "targetName": "compiled-javascript"
   },
   // It can also be written down more simply
   "target": "#compiled-javascript = cache/index.js"

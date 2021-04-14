@@ -3,6 +3,7 @@ import fs from "fs";
 import {ResourceListFile} from "../javascript-bundler/plugins/resource-plugin";
 import path from "path";
 import BaseAction, { BaseActionConfig } from "../base-scheme";
+import {prepareFileLocation} from "../utils";
 
 export interface CreateShaderLibraryActionConfig extends BaseActionConfig {
 
@@ -26,6 +27,7 @@ export default class CreateShaderLibraryAction extends BaseAction {
 
         for(let resourceInfo of resourceArray) {
             let resourcePath = resourceInfo[0]
+            // TODO: print error if file does not exist
             //let resourceReferences = resourceInfo[1]
 
             let absolutePath = path.join(this.scheme.beelder.getAbsolutePath(resourcePath))
@@ -34,6 +36,10 @@ export default class CreateShaderLibraryAction extends BaseAction {
         }
 
         let code = JSON.stringify(library)
-        fs.writeFileSync(destination, code, "utf8")
+        if(prepareFileLocation(destination)) {
+            fs.writeFileSync(destination, code, "utf8")
+        } else {
+            console.error("Could not create target directory. Please, check permissions")
+        }
     }
 }

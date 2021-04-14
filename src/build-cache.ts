@@ -46,7 +46,7 @@ export default class BuildCache {
 
         try {
             let data = JSON.stringify(json)
-            fs.writeFileSync(this.cacheFilePath, data)
+            fs.writeFileSync(this.cacheFilePath, data, "utf8")
         } catch(error) {
             console.error("Could not save cache file for section " + this.sectionPath);
             console.error(error.message)

@@ -53,7 +53,8 @@ let external = [
     "typescript",
     "@babel",
     "browser-pack",
-    "stream"
+    "stream",
+    "node-sass"
 ]
 
 for(let babelDependency of fs.readdirSync(path.join(__dirname, "../node_modules/@babel"))) {

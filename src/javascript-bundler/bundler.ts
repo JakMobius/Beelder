@@ -8,10 +8,13 @@ import {BundlerPluginConfig} from "./bundler-plugin";
 import BundlerPluginFactory from "./bundler-plugin-factory";
 import BundleJavascriptAction from "../schemes/bundle-javascript"
 import BuildCache from "../build-cache";
-import Packer from "./packer/packer";
+import Packer, { PackerBundleFileInfo } from "./packer/packer";
 import { Timings } from "..";
 import BeelderReference from "../reference";
 import BeelderScheme from "../scheme";
+import {Readable} from "stream";
+import browserPack from "browser-pack";
+import PackerProjectStorage from "./packer/packer-project-storage";
 
 export interface BundlerConfig {
     scheme: BeelderScheme
@@ -31,6 +34,7 @@ export interface BundlerConfig {
     plugins?: BundlerPluginConfig[]
     buildAction?: BundleJavascriptAction
     extensions?: string[]
+    includeExternalModules?: boolean | string[]
 }
 
 /**
@@ -43,12 +47,22 @@ export default class Bundler {
     packer: Packer
     scheme: BeelderScheme;
 
+    // Cache files should not me modified by
+    // anyone else, so we can avoid file modification
+    // date check. It would even break everything
+    buildTargetDataStorage: PackerProjectStorage
+
     constructor(config: BundlerConfig) {
         this.config = config
 
-        if(!this.config.extensions) this.config.extensions = [".ts", ".ts", ".json"]
+        if(!this.config.extensions) this.config.extensions = [".js", ".ts", ".json"]
         if(!this.config.babelSourceType) this.config.babelSourceType = "module"
         if(!this.config.babelPresets) this.config.babelPresets = this.getDefaultBabelifyPresets()
+
+        let cacheSection = this.config.cache.getSection("target-metadata")
+        this.buildTargetDataStorage = new PackerProjectStorage(cacheSection, {
+            skipFileModificationDateCheck: true
+        })
 
         this.scheme = config.scheme
         this.packer = this.createPacker()
@@ -74,7 +88,8 @@ export default class Bundler {
                 sourceMaps: this.config.generateSourceMaps,
                 sourceType: this.config.babelSourceType,
             },
-            extensions: this.config.extensions
+            extensions: this.config.extensions,
+            includeExternalModules: this.config.includeExternalModules
         })
     }
 
@@ -88,17 +103,62 @@ export default class Bundler {
     }
 
     async build() {
+
+        let projectUpdated = await this.packer.rebuildSubtree(this.config.source)
+
         if(this.config.destination) {
-            let stream = await this.packer.bundleSubtree(this.config.source)
+            let entries = await this.packer.bundleSubtree(this.config.source)
+            if(!entries) return
+
+            if(!this.bundleFilesUpdated(entries) && !projectUpdated) return
+
+            Timings.begin("Collapsing module identifiers")
+            Packer.collapseBundleIDs(entries)
+            Timings.end()
+
+            Timings.begin("Writing bundle")
+            let stream = Readable.from(entries).pipe(browserPack({ raw: true }))
             await this.listen(stream)
-            //stream.pipe(fs.createWriteStream(this.config.destination))
-        } else {
-            await this.packer.rebuildSubtree(this.config.source)
-        }
+            Timings.end()
+        } else if(!projectUpdated) return
 
         Timings.begin("Saving cache")
         await this.packer.cache.saveCaches()
         Timings.end()
+    }
+
+    private bundleFilesUpdated(entries: PackerBundleFileInfo[]) {
+        let result = false
+        let cache = this.buildTargetDataStorage.accessFileData(this.config.destination)
+
+        if(!cache.bundleFiles) {
+            cache.bundleFiles = {}
+            result = true
+        }
+
+        for(let entry of entries) {
+            let globalPath = entry.globalPath
+            let rebuildDate = this.packer.getFile(globalPath).getRebuildDate()
+            let fileInfo = cache.bundleFiles[globalPath]
+
+            if(!fileInfo) {
+                cache.bundleFiles[globalPath] = { modificationDate: rebuildDate }
+                result = true
+                continue;
+            }
+
+            if(rebuildDate > fileInfo.modificationDate) {
+                fileInfo.modificationDate = rebuildDate
+                result = true
+            }
+        }
+
+        if(result) {
+            this.buildTargetDataStorage.writeFileData(this.config.destination, cache)
+            this.buildTargetDataStorage.save()
+        }
+
+        return result
     }
 
     private getBabelPluginList(): any[] {

@@ -35,12 +35,21 @@ export default class PackerFile {
     public readonly projectPath: string
     public readonly packer: Packer;
     private ast: babel.types.File
+    shouldBeCompiled: boolean;
+    isJSON: boolean;
+    inOriginalPackage: boolean;
 
     constructor(packer: Packer, filePath: string) {
         this.packer = packer
         this.filePath = filePath
         this.projectPath = path.relative(this.packer.bundler.config.projectRoot, filePath)
         this.fastStorage = this.packer.cache.fastStorage.accessFileData(this.filePath)
+
+        // TODO: make this more smart
+        let extension = path.extname(this.projectPath)
+        this.shouldBeCompiled = extension == ".ts" || extension == ".js"
+        this.inOriginalPackage = !this.projectPath.startsWith("..") && this.projectPath.indexOf("node_modules") == -1
+        this.isJSON = extension == ".json"
     }
 
     /**
@@ -79,10 +88,18 @@ export default class PackerFile {
         return fs.readFileSync(this.filePath, "utf8")
     }
 
-    private compile() {
+    private compile(): babel.types.File {
         let contents = this.getContents()
-        let transformed = this.packer.transformFile(contents, this.projectPath)
-        return transformed.ast
+
+        if(this.shouldBeCompiled) {
+            if(this.inOriginalPackage) {
+                return this.packer.transformFile(contents, this.projectPath).ast
+            } else {
+                return this.packer.parseFile(contents, this.projectPath)
+            }
+        } else {
+            return null
+        }
     }
 
     /**
@@ -129,6 +146,7 @@ export default class PackerFile {
         }
         this.ast = this.compile()
         this.packer.cache.astStorage.writeFileData(this.filePath, this.ast)
+
         return this.ast
     }
 
@@ -150,7 +168,17 @@ export default class PackerFile {
      */
     getTransformedCode() {
         if(this.fastStorage.code) return this.fastStorage.code
-        this.fastStorage.code = this.packer.generateCode(this.getAST(), this.projectPath, this.getContents())
+
+        if(this.shouldBeCompiled) {
+            this.fastStorage.code = this.packer.generateCode(this.getAST(), this.projectPath, this.getContents())
+        } else if(this.isJSON) {
+            this.fastStorage.code = "module.exports = " + this.getContents()
+        } else {
+            this.fastStorage.code = this.getContents()
+        }
+
+        this.fastStorage.rebuildDate = Date.now()
+
         return this.fastStorage.code
     }
 
@@ -160,10 +188,16 @@ export default class PackerFile {
      */
     clearCodeCache() {
         this.fastStorage.code = null
+        this.fastStorage.rebuildDate = 0
     }
 
     private determineDependencies(): { [key: string]: string } {
-        return this.packer.astWatcher.findDependencies(this.getAST(true), this.filePath)
+        // Ignoring cache here to avoid unnecessary querying
+        // of the file system. This method is called only
+        // when cache is outdated or missing.
+        let ast = this.getAST(true)
+        if(!ast) return {}
+        return this.packer.astWatcher.findDependencies(ast, this.filePath)
     }
 
     getFastPluginStorage(plugin: string) {
@@ -182,5 +216,9 @@ export default class PackerFile {
 
     cacheIsUpToDate() {
         return !!this.fastStorage.dependencies
+    }
+
+    getRebuildDate() {
+        return this.fastStorage.rebuildDate || 0
     }
 }

@@ -2,9 +2,19 @@ import PackerStorage from "./packer-storage";
 import {hashToUUIDString32} from "../../utils";
 import BuildCache from "../../build-cache";
 
+export interface PackerProjectStorageConfig {
+    skipFileModificationDateCheck?: boolean
+}
+
 export default class PackerProjectStorage extends PackerStorage {
 
     private cachedJSON: any = null
+    config: PackerProjectStorageConfig
+
+    constructor(cache: BuildCache, config: PackerProjectStorageConfig = {}) {
+        super(cache);
+        this.config = config
+    }
 
     private getSection() {
         if(this.cachedJSON) return this.cachedJSON
@@ -17,13 +27,18 @@ export default class PackerProjectStorage extends PackerStorage {
     accessFileData(filePath: string) {
         let section = this.getSection()
 
-        if(BuildCache.fileRequiresRefresh(section.files, filePath)) {
-            let object = {}
-            BuildCache.refreshFileData(section.files, filePath, object)
-            return object
+        let data = null
+
+        if(this.config.skipFileModificationDateCheck || !BuildCache.fileRequiresRefresh(section.files, filePath)) {
+            data = BuildCache.getFileData(section.files, filePath)
         }
 
-        return BuildCache.getFileData(section.files, filePath)
+        if(!data) {
+            data = {}
+            BuildCache.refreshFileData(section.files, filePath, data)
+        }
+
+        return data
     }
 
     save() {

@@ -32,7 +32,7 @@ export default class PackerCache {
 
     async saveCaches() {
         await this.fastStorage.save()
-        // await this.largeStorage.save() - unused
-        // await this.astStorage.save() - unused. AST storage also will only be saved when file is rebuilt
+        // await this.largeStorage.save() - This will do nothing
+        // await this.astStorage.save() - And this too. AST storage also will only be saved when file is rebuilt
     }
 }

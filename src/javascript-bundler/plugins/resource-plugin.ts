@@ -5,14 +5,10 @@ import path from "path";
 import fs from "fs";
 import * as babel from "@babel/core";
 import {Timings} from "../..";
-import {TraverseContext, PackerFileCache } from "../packer/packer";
+import {TraverseContext} from "../packer/packer";
 import {Minimatch} from "minimatch"
 import {prepareFileLocation} from "../../utils";
 import BeelderReference, {BeelderReferenceConfig} from "../../reference";
-
-export interface ResourceFileCacheInfo extends PackerFileCache {
-    resources: ResourceReference[]
-}
 
 export class ResourceReference {
     resource: string
@@ -28,7 +24,8 @@ export interface BundlerResourcePluginConfig extends BundlerPluginConfig {
     rules: ResourcePluginRuleConfig[]
 }
 
-export type ResourceListFile = [file: string, references: string[]][]
+export type ResourceListEntry = [file: string, references: string[]]
+export type ResourceListFile = ResourceListEntry[]
 
 export class ResourcePluginRule {
     pattern: string
@@ -168,19 +165,6 @@ export default class ResourcePlugin extends BundlerPlugin {
             if(rule.target.definesTarget) {
                 if(!result) result = []
                 result.push(rule.target)
-            }
-        }
-
-        return result
-    }
-
-    getDependencies(): string[] | null {
-        let result: string[] | null = null
-
-        for(let rule of this.rules) {
-            if(rule.target.isDependency) {
-                if(!result) result = []
-                result.push(rule.target.getDependency())
             }
         }
 

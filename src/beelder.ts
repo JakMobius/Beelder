@@ -11,6 +11,7 @@ import BuildCache from "./build-cache";
 import AsyncEventEmitter from "./async-event-emitter";
 import CreateShaderLibraryAction from "./schemes/create-shader-library";
 import CompileSCSSSchemeAction from "./schemes/compile-scss";
+import DeleteAction from "./schemes/delete";
 
 export interface BeelderActionConfig {
     action: string
@@ -26,24 +27,26 @@ export default class Beelder {
 
     private config: BeelderConfig
     public static actions: Map<string, typeof BeelderAction> = new Map()
-    public schemes: Map<string, BeelderScheme> = new Map()
-    public targetMap: Map<string, BeelderScheme> = new Map()
-    public referenceMap: Map<string, BeelderReference> = new Map()
-    public readonly projectRoot: string;
-    public readonly cacheDirectory: string;
+    public schemes: Map<string, BeelderScheme>
+    public targetMap: Map<string, BeelderScheme>
+    public referenceMap: Map<string, BeelderReference>
+    public projectRoot: string;
+    public cacheDirectory: string;
     public cache: BuildCache;
 
     constructor(config: BeelderConfig, projectRoot?: string) {
         this.config = config
-
         this.projectRoot = projectRoot ?? '/'
-        this.cacheDirectory = path.resolve(this.projectRoot, config.cacheDirectory ?? "beelder-cache")
+        this.cacheDirectory = path.resolve(this.projectRoot, this.config.cacheDirectory ?? "beelder-cache")
         this.cache = new BuildCache(this.cacheDirectory)
-
-        this.loadSchemes()
     }
 
     loadSchemes(): void {
+        Timings.begin("Initializing Beelder")
+        this.schemes = new Map()
+        this.targetMap = new Map()
+        this.referenceMap = new Map()
+
         for(let [name, scheme] of Object.entries(this.config.schemes)) {
             this.schemes.set(name, new BeelderScheme(name, scheme, this))
         }
@@ -53,6 +56,7 @@ export default class Beelder {
                 this.referenceMap.set(target.getDefinedTarget(), target);
             }
         }
+        Timings.end()
     }
 
     static registerAction(actionClass: typeof BeelderAction) {
@@ -60,6 +64,7 @@ export default class Beelder {
     }
 
     async runScheme(schemeName: string) {
+        if(!this.schemes) this.loadSchemes()
         let scheme = this.schemes.get(schemeName)
         if (!scheme) throw new Error("No such scheme: '" + schemeName + "'")
 
@@ -84,6 +89,8 @@ export default class Beelder {
     }
 
     private enqueueScheme(list: BeelderScheme[], scheme: BeelderScheme, stack: BeelderScheme[]) {
+
+        if(list.indexOf(scheme) != -1) return
 
         let dependencies = scheme.getDependencies()
 
@@ -142,3 +149,4 @@ Beelder.registerAction(CopyAction)
 Beelder.registerAction(TextureAtlasAction)
 Beelder.registerAction(CreateShaderLibraryAction)
 Beelder.registerAction(CompileSCSSSchemeAction)
+Beelder.registerAction(DeleteAction)
