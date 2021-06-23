@@ -3,7 +3,7 @@ import fs from "fs"
 import {ResourceListEntry, ResourceListFile } from "../javascript-bundler/plugins/resource-plugin";
 import BaseAction, { BaseActionConfig } from "../base-scheme";
 import BuildCache from "../build-cache";
-import SASS from "node-sass"
+import SASS from "sass"
 import {compareArrayValues, prepareFileLocation} from "../utils";
 import { Timings } from "..";
 

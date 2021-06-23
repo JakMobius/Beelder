@@ -4911,7 +4911,7 @@ var _baseScheme = _interopRequireDefault(require("../base-scheme"));
 
 var _buildCache = _interopRequireDefault(require("../build-cache"));
 
-var _nodeSass = _interopRequireDefault(require("node-sass"));
+var _sass = _interopRequireDefault(require("sass"));
 
 var _utils = require("../utils");
 
@@ -5011,7 +5011,7 @@ class CompileSCSSSchemeAction extends _baseScheme.default {
   compileCSS(resourceInfo) {
     let file = _fs.default.readFileSync(resourceInfo[0], "utf8");
 
-    let rendered = _nodeSass.default.renderSync({
+    let rendered = _sass.default.renderSync({
       data: file,
       outputStyle: "expanded"
     });
@@ -5024,7 +5024,7 @@ class CompileSCSSSchemeAction extends _baseScheme.default {
 exports.default = CompileSCSSSchemeAction;
 CompileSCSSSchemeAction.actionName = "compile-scss";
 
-},{"..":"index.ts","../base-scheme":26,"../build-cache":28,"../utils":52,"@babel/runtime/helpers/interopRequireDefault":1,"fs":"fs","node-sass":"node-sass"}],47:[function(require,module,exports){
+},{"..":"index.ts","../base-scheme":26,"../build-cache":28,"../utils":52,"@babel/runtime/helpers/interopRequireDefault":1,"fs":"fs","sass":"sass"}],47:[function(require,module,exports){
 "use strict";
 
 var _interopRequireDefault = require("@babel/runtime/helpers/interopRequireDefault");

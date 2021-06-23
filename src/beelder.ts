@@ -8,7 +8,6 @@ import BeelderReference from "./reference";
 import path from "path";
 import Chalk from "chalk"
 import BuildCache from "./build-cache";
-import AsyncEventEmitter from "./async-event-emitter";
 import CreateShaderLibraryAction from "./schemes/create-shader-library";
 import CompileSCSSSchemeAction from "./schemes/compile-scss";
 import DeleteAction from "./schemes/delete";
