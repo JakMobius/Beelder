@@ -6,8 +6,7 @@ import fs from "fs"
 import Timings from "../timings";
 
 export interface CopyActionConfig extends BaseActionConfig {
-    source: string
-    target: string
+    
 }
 
 export default class CopyAction extends BaseAction {

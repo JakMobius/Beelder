@@ -11,10 +11,11 @@ import BuildCache from "./build-cache";
 import CreateShaderLibraryAction from "./schemes/create-shader-library";
 import CompileSCSSSchemeAction from "./schemes/compile-scss";
 import DeleteAction from "./schemes/delete";
+import RunCommandAction from "./schemes/run-command";
+import RequireTargetAction from "./schemes/require-target";
 
 export interface BeelderActionConfig {
     action: string
-    targetName?: string
 }
 
 export interface BeelderConfig {
@@ -149,3 +150,4 @@ Beelder.registerAction(TextureAtlasAction)
 Beelder.registerAction(CreateShaderLibraryAction)
 Beelder.registerAction(CompileSCSSSchemeAction)
 Beelder.registerAction(DeleteAction)
+Beelder.registerAction(RequireTargetAction)

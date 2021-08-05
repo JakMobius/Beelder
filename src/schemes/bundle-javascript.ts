@@ -8,6 +8,7 @@ import {concatOptionalArrays} from "../utils";
 
 export interface BundleJavascriptActionConfig extends BaseActionConfig {
     compilerOptions: any
+    cacheSection: string | null
 }
 
 /**
@@ -21,6 +22,7 @@ export interface BundleJavascriptActionConfig extends BaseActionConfig {
  * - `compilerOptions.babelPlugins`
  * - `compilerOptions.babelPresets`
  * - `compilerOptions.babelSourceType`
+ * - `includeExternalModules`
  */
 
 export default class BundleJavascriptAction extends BaseAction {
@@ -33,6 +35,7 @@ export default class BundleJavascriptAction extends BaseAction {
         super(config, scheme);
         
         this.compilerOptions = config.compilerOptions
+        if(config.cacheSection) this.cache = this.cache.getSection(config.cacheSection)
 
 
         this.createBundler()

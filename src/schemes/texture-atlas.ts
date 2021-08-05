@@ -207,7 +207,7 @@ export default class TextureAtlasAction extends BaseAction {
 
         let cacheJSON = await this.cache.getJSON() as TextureAtlasActionCache
 
-        let context = new AtlasCreationSession(source, this.config.atlasSize)
+        let context = new AtlasCreationSession(source, this.config.atlasSize ?? 1024)
 
         Timings.begin("Reading directory")
         await context.readTextureList()

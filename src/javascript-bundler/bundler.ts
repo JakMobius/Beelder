@@ -116,6 +116,8 @@ export default class Bundler {
             Packer.collapseBundleIDs(entries)
             Timings.end()
 
+            //fs.writeFileSync("./beelder-debug-" + Math.floor(Math.random() * 1000) + ".json", JSON.stringify(entries))
+
             Timings.begin("Writing bundle")
             let stream = Readable.from(entries).pipe(browserPack({ raw: true }))
             await this.listen(stream)

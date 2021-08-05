@@ -5,7 +5,10 @@
 		"sourceMap": true,
 		"esModuleInterop": true,
 		"noImplicitAny": true,
-
+		"lib": [
+			"es5",
+			"dom"
+		]
 	},
 	"exclude": [
 		"node_modules"

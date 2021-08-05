@@ -1,5 +1,4 @@
 import Bundler from "../bundler";
-import {FileListCache} from "../../build-cache";
 import * as babel from "@babel/core";
 
 import path from "path";
@@ -250,8 +249,10 @@ export default class Packer extends AsyncEventEmitter {
         // automatically. See getDependencies
         // documentation
         for(let [name, absolute] of Object.entries(file.getDependencies())) {
-            if(!this.shouldWalkFile(name)) continue;
-            if(tempContext.onlyCompilableFiles && !this.getFile(absolute).shouldBeCompiled) continue
+            if(!this.shouldWalkFile(name))
+                continue;
+            if(tempContext.onlyCompilableFiles && !this.getFile(absolute).shouldBeCompiled)
+                continue;
 
             await this.traverse(absolute, tempContext, callback);
         }

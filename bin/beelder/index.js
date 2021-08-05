@@ -2835,6 +2835,8 @@ var _compileScss = _interopRequireDefault(require("./schemes/compile-scss"));
 
 var _delete = _interopRequireDefault(require("./schemes/delete"));
 
+var _requireTarget = _interopRequireDefault(require("./schemes/require-target"));
+
 class Beelder {
   constructor(config, projectRoot) {
     var _this$config$cacheDir;
@@ -2961,8 +2963,9 @@ Beelder.registerAction(_textureAtlas.default);
 Beelder.registerAction(_createShaderLibrary.default);
 Beelder.registerAction(_compileScss.default);
 Beelder.registerAction(_delete.default);
+Beelder.registerAction(_requireTarget.default);
 
-},{"./build-cache":28,"./scheme":44,"./schemes/bundle-javascript":45,"./schemes/compile-scss":46,"./schemes/copy":47,"./schemes/create-shader-library":48,"./schemes/delete":49,"./schemes/texture-atlas":50,"./timings":51,"@babel/runtime/helpers/interopRequireDefault":1,"chalk":"chalk","path":"path"}],28:[function(require,module,exports){
+},{"./build-cache":28,"./scheme":44,"./schemes/bundle-javascript":45,"./schemes/compile-scss":46,"./schemes/copy":47,"./schemes/create-shader-library":48,"./schemes/delete":49,"./schemes/require-target":50,"./schemes/texture-atlas":51,"./timings":52,"@babel/runtime/helpers/interopRequireDefault":1,"chalk":"chalk","path":"path"}],28:[function(require,module,exports){
 "use strict";
 
 var _interopRequireDefault = require("@babel/runtime/helpers/interopRequireDefault");
@@ -3066,7 +3069,7 @@ class BuildCache {
 
 exports.default = BuildCache;
 
-},{"./utils":52,"@babel/runtime/helpers/interopRequireDefault":1,"fs":"fs","path":"path"}],29:[function(require,module,exports){
+},{"./utils":53,"@babel/runtime/helpers/interopRequireDefault":1,"fs":"fs","path":"path"}],29:[function(require,module,exports){
 "use strict";
 
 var _interopRequireDefault = require("@babel/runtime/helpers/interopRequireDefault");
@@ -3372,7 +3375,8 @@ class Bundler {
 
       _packer.default.collapseBundleIDs(entries);
 
-      _.Timings.end();
+      _.Timings.end(); //fs.writeFileSync("./beelder-debug-" + Math.floor(Math.random() * 1000) + ".json", JSON.stringify(entries))
+
 
       _.Timings.begin("Writing bundle");
 
@@ -3493,7 +3497,7 @@ class Bundler {
 
 exports.default = Bundler;
 
-},{"..":"index.ts","../utils":52,"./bundler-plugin-factory":30,"./packer/packer":39,"./packer/packer-project-storage":37,"@babel/runtime/helpers/interopRequireDefault":1,"@babel/runtime/helpers/interopRequireWildcard":2,"browser-pack":"browser-pack","exorcist":"exorcist","fs":"fs","stream":"stream"}],33:[function(require,module,exports){
+},{"..":"index.ts","../utils":53,"./bundler-plugin-factory":30,"./packer/packer":39,"./packer/packer-project-storage":37,"@babel/runtime/helpers/interopRequireDefault":1,"@babel/runtime/helpers/interopRequireWildcard":2,"browser-pack":"browser-pack","exorcist":"exorcist","fs":"fs","stream":"stream"}],33:[function(require,module,exports){
 "use strict";
 
 var _interopRequireDefault = require("@babel/runtime/helpers/interopRequireDefault");
@@ -3670,7 +3674,7 @@ class PackerFileStorage extends _packerStorage.default {
 
 exports.default = PackerFileStorage;
 
-},{"../../build-cache":28,"../../utils":52,"./packer-storage":38,"@babel/runtime/helpers/interopRequireDefault":1}],36:[function(require,module,exports){
+},{"../../build-cache":28,"../../utils":53,"./packer-storage":38,"@babel/runtime/helpers/interopRequireDefault":1}],36:[function(require,module,exports){
 "use strict";
 
 var _interopRequireDefault = require("@babel/runtime/helpers/interopRequireDefault");
@@ -4639,7 +4643,7 @@ class ResourcePlugin extends _bundlerPlugin.default {
 exports.default = ResourcePlugin;
 ResourcePlugin.resourcePrefix = "@load-resource:";
 
-},{"../..":"index.ts","../../event-handler-block":29,"../../reference":43,"../../utils":52,"../bundler-plugin":31,"../packer/packer":39,"@babel/runtime/helpers/interopRequireDefault":1,"fs":"fs","minimatch":13,"path":"path"}],43:[function(require,module,exports){
+},{"../..":"index.ts","../../event-handler-block":29,"../../reference":43,"../../utils":53,"../bundler-plugin":31,"../packer/packer":39,"@babel/runtime/helpers/interopRequireDefault":1,"fs":"fs","minimatch":13,"path":"path"}],43:[function(require,module,exports){
 "use strict";
 
 var _interopRequireDefault = require("@babel/runtime/helpers/interopRequireDefault");
@@ -4810,7 +4814,7 @@ class BeelderScheme {
 
 exports.default = BeelderScheme;
 
-},{"./beelder":27,"./reference":43,"./timings":51,"./utils":52,"@babel/runtime/helpers/interopRequireDefault":1,"chalk":"chalk"}],45:[function(require,module,exports){
+},{"./beelder":27,"./reference":43,"./timings":52,"./utils":53,"@babel/runtime/helpers/interopRequireDefault":1,"chalk":"chalk"}],45:[function(require,module,exports){
 "use strict";
 
 var _interopRequireDefault = require("@babel/runtime/helpers/interopRequireDefault");
@@ -4846,6 +4850,7 @@ class BundleJavascriptAction extends _baseScheme.default {
     this.compilerOptions = void 0;
     this.bundler = void 0;
     this.compilerOptions = config.compilerOptions;
+    if (config.cacheSection) this.cache = this.cache.getSection(config.cacheSection);
     this.createBundler();
   }
 
@@ -4895,7 +4900,7 @@ class BundleJavascriptAction extends _baseScheme.default {
 exports.default = BundleJavascriptAction;
 BundleJavascriptAction.actionName = "bundle-javascript";
 
-},{"../base-scheme":26,"../javascript-bundler/bundler":32,"../timings":51,"../utils":52,"@babel/runtime/helpers/interopRequireDefault":1}],46:[function(require,module,exports){
+},{"../base-scheme":26,"../javascript-bundler/bundler":32,"../timings":52,"../utils":53,"@babel/runtime/helpers/interopRequireDefault":1}],46:[function(require,module,exports){
 "use strict";
 
 var _interopRequireDefault = require("@babel/runtime/helpers/interopRequireDefault");
@@ -5024,7 +5029,7 @@ class CompileSCSSSchemeAction extends _baseScheme.default {
 exports.default = CompileSCSSSchemeAction;
 CompileSCSSSchemeAction.actionName = "compile-scss";
 
-},{"..":"index.ts","../base-scheme":26,"../build-cache":28,"../utils":52,"@babel/runtime/helpers/interopRequireDefault":1,"fs":"fs","sass":"sass"}],47:[function(require,module,exports){
+},{"..":"index.ts","../base-scheme":26,"../build-cache":28,"../utils":53,"@babel/runtime/helpers/interopRequireDefault":1,"fs":"fs","sass":"sass"}],47:[function(require,module,exports){
 "use strict";
 
 var _interopRequireDefault = require("@babel/runtime/helpers/interopRequireDefault");
@@ -5091,7 +5096,7 @@ class CopyAction extends _baseScheme.default {
 exports.default = CopyAction;
 CopyAction.actionName = "copy";
 
-},{"../base-scheme":26,"../timings":51,"../utils":52,"@babel/runtime/helpers/interopRequireDefault":1,"fs":"fs","path":"path"}],48:[function(require,module,exports){
+},{"../base-scheme":26,"../timings":52,"../utils":53,"@babel/runtime/helpers/interopRequireDefault":1,"fs":"fs","path":"path"}],48:[function(require,module,exports){
 "use strict";
 
 var _interopRequireDefault = require("@babel/runtime/helpers/interopRequireDefault");
@@ -5145,7 +5150,7 @@ class CreateShaderLibraryAction extends _baseScheme.default {
 exports.default = CreateShaderLibraryAction;
 CreateShaderLibraryAction.actionName = "create-shader-library";
 
-},{"../base-scheme":26,"../utils":52,"@babel/runtime/helpers/interopRequireDefault":1,"fs":"fs","path":"path"}],49:[function(require,module,exports){
+},{"../base-scheme":26,"../utils":53,"@babel/runtime/helpers/interopRequireDefault":1,"fs":"fs","path":"path"}],49:[function(require,module,exports){
 "use strict";
 
 var _interopRequireDefault = require("@babel/runtime/helpers/interopRequireDefault");
@@ -5198,7 +5203,45 @@ class DeleteAction extends _action.default {
 exports.default = DeleteAction;
 DeleteAction.actionName = "delete";
 
-},{"../action":24,"../reference":43,"../timings":51,"@babel/runtime/helpers/interopRequireDefault":1,"fs":"fs"}],50:[function(require,module,exports){
+},{"../action":24,"../reference":43,"../timings":52,"@babel/runtime/helpers/interopRequireDefault":1,"fs":"fs"}],50:[function(require,module,exports){
+"use strict";
+
+var _interopRequireDefault = require("@babel/runtime/helpers/interopRequireDefault");
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports.default = void 0;
+
+var _action = _interopRequireDefault(require("../action"));
+
+var _reference = _interopRequireDefault(require("../reference"));
+
+class RequireTargetAction extends _action.default {
+  constructor(config, scheme) {
+    super(config, scheme);
+    this.target = void 0;
+    this.target = new _reference.default(config.target);
+
+    if (this.target.definesTarget) {
+      throw new Error("run-command target field must specify existing target");
+    }
+
+    if (!this.target.isDependency) {
+      throw new Error("run-command target field must specify dependency target");
+    }
+  }
+
+  getDependencies() {
+    return [this.target.getDependency()];
+  }
+
+}
+
+exports.default = RequireTargetAction;
+RequireTargetAction.actionName = "require-target";
+
+},{"../action":24,"../reference":43,"@babel/runtime/helpers/interopRequireDefault":1}],51:[function(require,module,exports){
 "use strict";
 
 var _interopRequireDefault = require("@babel/runtime/helpers/interopRequireDefault");
@@ -5450,7 +5493,7 @@ class TextureAtlasAction extends _baseScheme.default {
 exports.default = TextureAtlasAction;
 TextureAtlasAction.actionName = "texture-atlas";
 
-},{"../base-scheme":26,"../build-cache":28,"../timings":51,"../utils":52,"@babel/runtime/helpers/interopRequireDefault":1,"atlaspack":"atlaspack","canvas":"canvas","fs":"fs","path":"path"}],51:[function(require,module,exports){
+},{"../base-scheme":26,"../build-cache":28,"../timings":52,"../utils":53,"@babel/runtime/helpers/interopRequireDefault":1,"atlaspack":"atlaspack","canvas":"canvas","fs":"fs","path":"path"}],52:[function(require,module,exports){
 "use strict";
 
 var _interopRequireDefault = require("@babel/runtime/helpers/interopRequireDefault");
@@ -5622,7 +5665,7 @@ Timings.errPrefix = _chalk.default.red.bold("[ ERR ]") + _chalk.default.gray(": 
 Timings.timingColor = _chalk.default.cyan;
 Timings.stack = [];
 
-},{"@babel/runtime/helpers/interopRequireDefault":1,"chalk":"chalk","util":"util"}],52:[function(require,module,exports){
+},{"@babel/runtime/helpers/interopRequireDefault":1,"chalk":"chalk","util":"util"}],53:[function(require,module,exports){
 "use strict";
 
 var _interopRequireDefault = require("@babel/runtime/helpers/interopRequireDefault");
@@ -5868,6 +5911,6 @@ var _timings = _interopRequireDefault(require("./timings"));
 
 var _beelder = _interopRequireDefault(require("./beelder"));
 
-},{"./beelder":27,"./timings":51,"@babel/runtime/helpers/interopRequireDefault":1}]},{},[])("index.ts")
+},{"./beelder":27,"./timings":52,"@babel/runtime/helpers/interopRequireDefault":1}]},{},[])("index.ts")
 });
 //# sourceMappingURL=index.js.map
