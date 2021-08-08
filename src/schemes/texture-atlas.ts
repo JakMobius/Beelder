@@ -136,8 +136,14 @@ export class AtlasCreationSession {
                 resolve()
             }
 
+            // node-canvas sometimes throws ENOENT without any reason,
+            // so we help him by reading the file for him.
+
+            const texturePath = path.resolve(this.texturesRoot, file)
+            const buffer = fs.readFileSync(texturePath)
+
             image.onerror = reject
-            image.src = path.resolve(this.texturesRoot, file)
+            image.src = buffer
         })))
 
         textures.sort((left, right) => {

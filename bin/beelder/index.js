@@ -4843,6 +4843,7 @@ var _utils = require("../utils");
  * - `compilerOptions.babelPlugins`
  * - `compilerOptions.babelPresets`
  * - `compilerOptions.babelSourceType`
+ * - `includeExternalModules`
  */
 class BundleJavascriptAction extends _baseScheme.default {
   constructor(config, scheme) {
@@ -5069,7 +5070,7 @@ class CopyAction extends _baseScheme.default {
 
     let dirname;
 
-    if (destination.endsWith("/")) {
+    if (destination.endsWith(_path.default.sep)) {
       // Copying something in directory, adding filename explicitly
       dirname = destination;
       destination = _path.default.join(destination, _path.default.basename(source));
@@ -5375,10 +5376,16 @@ class AtlasCreationSession {
           image: image
         });
         resolve();
-      };
+      }; // node-canvas sometimes throws ENOENT without any reason,
+      // so we help him by reading the file for him.
+
+
+      const texturePath = _path.default.resolve(this.texturesRoot, file);
+
+      const buffer = _fs.default.readFileSync(texturePath);
 
       image.onerror = reject;
-      image.src = _path.default.resolve(this.texturesRoot, file);
+      image.src = buffer;
     })));
     textures.sort((left, right) => {
       return right.image.width * right.image.height - left.image.width * left.image.height;
@@ -5427,6 +5434,8 @@ class TextureAtlasAction extends _baseScheme.default {
   }
 
   async run() {
+    var _this$config$atlasSiz;
+
     let source = this.scheme.beelder.resolveReference(this.source);
     let destination = this.scheme.beelder.resolveReference(this.target);
     if (!(0, _utils.prepareDirectory)(destination)) throw new Error("Unable to create destination folder");
@@ -5434,7 +5443,7 @@ class TextureAtlasAction extends _baseScheme.default {
     _timings.default.begin("Creating texture atlases of " + this.source.getConsoleName());
 
     let cacheJSON = await this.cache.getJSON();
-    let context = new AtlasCreationSession(source, this.config.atlasSize);
+    let context = new AtlasCreationSession(source, (_this$config$atlasSiz = this.config.atlasSize) !== null && _this$config$atlasSiz !== void 0 ? _this$config$atlasSiz : 1024);
 
     _timings.default.begin("Reading directory");
 
@@ -5784,7 +5793,7 @@ function copyDirectoryContents(from, to) {
 }
 
 function copyDirectory(from, to) {
-  if (to.endsWith("/")) {
+  if (to.endsWith(_path.default.sep)) {
     to = _path.default.join(to, _path.default.basename(from));
   }
 

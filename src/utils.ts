@@ -91,7 +91,7 @@ export function copyDirectoryContents(from: string, to: string) {
 }
 
 export function copyDirectory(from: string, to: string) {
-    if (to.endsWith("/")) {
+    if (to.endsWith(path.sep)) {
         to = path.join(to, path.basename(from))
     }
     copyDirectoryContents(from, to)

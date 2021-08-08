@@ -33,7 +33,7 @@ export default class CopyAction extends BaseAction {
 
         let dirname: string
 
-        if(destination.endsWith("/")) {
+        if(destination.endsWith(path.sep)) {
             // Copying something in directory, adding filename explicitly
 
             dirname = destination
