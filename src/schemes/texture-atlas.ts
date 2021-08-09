@@ -8,7 +8,7 @@ import fs from "fs"
 import path from "path"
 import Timings from "../timings";
 import Chalk from "chalk";
-import {readdirDeep, compareArrayValues, trimExtension, prepareDirectory} from "../utils"
+import {readdirDeep, compareArrayValues, trimExtension, prepareDirectory, escapeRegExp} from "../utils"
 import BuildCache, {FileListCache} from "../build-cache";
 
 export interface TextureAtlasActionConfig extends BaseActionConfig {
@@ -30,10 +30,15 @@ export class AtlasCreationSession {
     texturesRoot: string
     atlasSize: number
     texturesToPack: AtlasCreationTexture[]
+    pathSepReplaceRegex?: RegExp;
 
     constructor(texturesRoot: string, atlasSize: number) {
         this.texturesRoot = texturesRoot
         this.atlasSize = atlasSize
+
+        if(path.sep !== '/') {
+            this.pathSepReplaceRegex = new RegExp(escapeRegExp(path.sep), "g");
+        }
     }
 
     async readTextureList() {
@@ -112,7 +117,12 @@ export class AtlasCreationSession {
                 }
 
                 if(!this.atlasDescriptors[j]) this.atlasDescriptors[j] = {}
-                this.atlasDescriptors[j][image.name] = AtlasCreationSession.webglRect(rect, this.canvases[j])
+
+                let texturePath = image.name
+
+                if(this.pathSepReplaceRegex) texturePath = texturePath.replace(this.pathSepReplaceRegex, '/')
+
+                this.atlasDescriptors[j][texturePath] = AtlasCreationSession.webglRect(rect, this.canvases[j])
 
                 AtlasCreationSession.drawTexture(this.canvases[j], this.contexts[j], image, rect)
 

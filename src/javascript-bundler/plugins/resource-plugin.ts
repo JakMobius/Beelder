@@ -7,7 +7,7 @@ import * as babel from "@babel/core";
 import {Timings} from "../..";
 import {TraverseContext} from "../packer/packer";
 import {Minimatch} from "minimatch"
-import {prepareFileLocation} from "../../utils";
+import {escapeRegExp, prepareFileLocation} from "../../utils";
 import BeelderReference, {BeelderReferenceConfig} from "../../reference";
 
 export class ResourceReference {
@@ -47,6 +47,7 @@ export default class ResourcePlugin extends BundlerPlugin {
     eventHandlerBlock: EventHandlerBlock;
     config: BundlerResourcePluginConfig;
     rules: ResourcePluginRule[]
+    pathSepReplaceRegex?: RegExp
 
     constructor(config: BundlerResourcePluginConfig) {
         super(config)
@@ -57,6 +58,10 @@ export default class ResourcePlugin extends BundlerPlugin {
         this.eventHandlerBlock.bind("after-build", async () => await this.findResources())
 
         this.rules = this.config.rules.map(config => new ResourcePluginRule(config))
+
+        if(path.sep !== '/') {
+            this.pathSepReplaceRegex = new RegExp(escapeRegExp(path.sep), "g");
+        }
     }
 
     setCompiler(bundler: Bundler) {
@@ -122,6 +127,10 @@ export default class ResourcePlugin extends BundlerPlugin {
                     resourcePath = resourcePath.substr(1)
                 } else {
                     resourcePath = path.join(dirname, resourcePath)
+                }
+
+                if(this.pathSepReplaceRegex) {
+                    resourcePath = resourcePath.replace(this.pathSepReplaceRegex, '/')
                 }
 
                 let resourceToAdd: ResourceReference = {

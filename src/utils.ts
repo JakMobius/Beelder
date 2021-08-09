@@ -194,3 +194,7 @@ export function concatOptionalArrays<T>(arrayA: T[] | null, arrayB: T[] | null) 
 
     return arrayA
 }
+
+export function escapeRegExp(string: string) {
+    return string.replace(/[.*+\-?^${}()|[\]\\]/g, '\\$&');
+}

@@ -4521,10 +4521,15 @@ class ResourcePlugin extends _bundlerPlugin.default {
     this.eventHandlerBlock = void 0;
     this.config = void 0;
     this.rules = void 0;
+    this.pathSepReplaceRegex = void 0;
     this.config = config;
     this.eventHandlerBlock = new _eventHandlerBlock.default();
     this.eventHandlerBlock.bind("after-build", async () => await this.findResources());
     this.rules = this.config.rules.map(config => new ResourcePluginRule(config));
+
+    if (_path.default.sep !== '/') {
+      this.pathSepReplaceRegex = new RegExp((0, _utils.escapeRegExp)(_path.default.sep), "g");
+    }
   }
 
   setCompiler(bundler) {
@@ -4589,6 +4594,10 @@ class ResourcePlugin extends _bundlerPlugin.default {
           resourcePath = resourcePath.substr(1);
         } else {
           resourcePath = _path.default.join(dirname, resourcePath);
+        }
+
+        if (this.pathSepReplaceRegex) {
+          resourcePath = resourcePath.replace(this.pathSepReplaceRegex, '/');
         }
 
         let resourceToAdd = {
@@ -5279,8 +5288,13 @@ class AtlasCreationSession {
     this.texturesRoot = void 0;
     this.atlasSize = void 0;
     this.texturesToPack = void 0;
+    this.pathSepReplaceRegex = void 0;
     this.texturesRoot = texturesRoot;
     this.atlasSize = atlasSize;
+
+    if (_path.default.sep !== '/') {
+      this.pathSepReplaceRegex = new RegExp((0, _utils.escapeRegExp)(_path.default.sep), "g");
+    }
   }
 
   async readTextureList() {
@@ -5357,7 +5371,9 @@ class AtlasCreationSession {
         }
 
         if (!this.atlasDescriptors[j]) this.atlasDescriptors[j] = {};
-        this.atlasDescriptors[j][image.name] = AtlasCreationSession.webglRect(rect, this.canvases[j]);
+        let texturePath = image.name;
+        if (this.pathSepReplaceRegex) texturePath = texturePath.replace(this.pathSepReplaceRegex, '/');
+        this.atlasDescriptors[j][texturePath] = AtlasCreationSession.webglRect(rect, this.canvases[j]);
         AtlasCreationSession.drawTexture(this.canvases[j], this.contexts[j], image, rect);
         mipMapSize >>= 1;
         scale /= 2;
@@ -5376,8 +5392,9 @@ class AtlasCreationSession {
           image: image
         });
         resolve();
-      }; // node-canvas sometimes throws ENOENT without any reason,
-      // so we help him by reading the file for him.
+      }; // node-canvas sometimes throws ENOENT without
+      // any reason on Windows, so we help him by
+      // reading the file for him.
 
 
       const texturePath = _path.default.resolve(this.texturesRoot, file);
@@ -5693,6 +5710,7 @@ exports.murmurhash3_32_gc = murmurhash3_32_gc;
 exports.hashToUUIDString32 = hashToUUIDString32;
 exports.mapToObject = mapToObject;
 exports.concatOptionalArrays = concatOptionalArrays;
+exports.escapeRegExp = escapeRegExp;
 
 var _fs = _interopRequireDefault(require("fs"));
 
@@ -5893,6 +5911,10 @@ function concatOptionalArrays(arrayA, arrayB) {
   }
 
   return arrayA;
+}
+
+function escapeRegExp(string) {
+  return string.replace(/[.*+\-?^${}()|[\]\\]/g, '\\$&');
 }
 
 },{"@babel/runtime/helpers/interopRequireDefault":1,"fs":"fs","path":"path"}],"index.ts":[function(require,module,exports){
