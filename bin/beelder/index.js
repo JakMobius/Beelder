@@ -4950,30 +4950,37 @@ class CompileSCSSSchemeAction extends _baseScheme.default {
     let destination = this.scheme.beelder.resolveReference(this.target);
     let resourceFile = JSON.parse(_fs.default.readFileSync(source, "utf8"));
     let resourceList = resourceFile.map(file => file[0]);
-    let cache = this.cache.getJSON();
-    if (!cache.files) cache.files = {};
-    if (!cache.resultCache) cache.resultCache = {};
-    let resultCache = cache.resultCache[destination];
+    let cacheJSON = this.cache.getJSON();
+    let cacheForCurrentResourceList = cacheJSON[source];
+
+    if (!cacheForCurrentResourceList) {
+      cacheForCurrentResourceList = {};
+      cacheJSON[source] = cacheForCurrentResourceList;
+    }
+
+    if (!cacheForCurrentResourceList.files) cacheForCurrentResourceList.files = {};
+    if (!cacheForCurrentResourceList.resultCache) cacheForCurrentResourceList.resultCache = {};
+    let resultCache = cacheForCurrentResourceList.resultCache[destination];
 
     if (!resultCache) {
       resultCache = {};
-      cache.resultCache[destination] = resultCache;
+      cacheForCurrentResourceList.resultCache[destination] = resultCache;
     }
 
     let shouldUpdate = this.schemeFileCacheOutdated(resultCache, resourceList);
-    if (!shouldUpdate) shouldUpdate = this.anyFilesUpdated(cache.files, resourceList);
+    if (!shouldUpdate) shouldUpdate = this.anyFilesUpdated(cacheForCurrentResourceList.files, resourceList);
 
     if (shouldUpdate) {
       _.Timings.begin("Recompiling SCSS files");
 
       if ((0, _utils.prepareFileLocation)(destination)) {
-        _fs.default.writeFileSync(destination, this.recompileFiles(resourceFile, cache.files), "utf8");
+        _fs.default.writeFileSync(destination, this.recompileFiles(resourceFile, cacheForCurrentResourceList.files), "utf8");
       } else {
         console.error("Could not create target directory. Please, check permissions");
       }
 
       resultCache.resourceList = resourceList;
-      this.cache.setJSON(cache);
+      this.cache.setJSON(cacheForCurrentResourceList);
 
       _.Timings.end();
     }

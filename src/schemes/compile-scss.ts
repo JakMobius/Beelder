@@ -36,30 +36,37 @@ export default class CompileSCSSSchemeAction extends BaseAction {
         let resourceFile = JSON.parse(fs.readFileSync(source, "utf8")) as ResourceListFile
         let resourceList = resourceFile.map(file => file[0]);
 
-        let cache = this.cache.getJSON()
-        if(!cache.files) cache.files = {}
-        if(!cache.resultCache) cache.resultCache = {}
+        let cacheJSON = this.cache.getJSON()
+        let cacheForCurrentResourceList = cacheJSON[source]
 
-        let resultCache = cache.resultCache[destination]
+        if(!cacheForCurrentResourceList) {
+            cacheForCurrentResourceList = {}
+            cacheJSON[source] = cacheForCurrentResourceList
+        }
+
+        if(!cacheForCurrentResourceList.files) cacheForCurrentResourceList.files = {}
+        if(!cacheForCurrentResourceList.resultCache) cacheForCurrentResourceList.resultCache = {}
+
+        let resultCache = cacheForCurrentResourceList.resultCache[destination]
         if(!resultCache) {
             resultCache = {}
-            cache.resultCache[destination] = resultCache
+            cacheForCurrentResourceList.resultCache[destination] = resultCache
         }
 
 
         let shouldUpdate = this.schemeFileCacheOutdated(resultCache, resourceList);
 
-        if(!shouldUpdate) shouldUpdate = this.anyFilesUpdated(cache.files, resourceList);
+        if(!shouldUpdate) shouldUpdate = this.anyFilesUpdated(cacheForCurrentResourceList.files, resourceList);
 
         if(shouldUpdate) {
             Timings.begin("Recompiling SCSS files")
             if(prepareFileLocation(destination)) {
-                fs.writeFileSync(destination, this.recompileFiles(resourceFile, cache.files), "utf8")
+                fs.writeFileSync(destination, this.recompileFiles(resourceFile, cacheForCurrentResourceList.files), "utf8")
             } else {
                 console.error("Could not create target directory. Please, check permissions")
             }
             resultCache.resourceList = resourceList
-            this.cache.setJSON(cache)
+            this.cache.setJSON(cacheForCurrentResourceList)
             Timings.end()
         }
 
