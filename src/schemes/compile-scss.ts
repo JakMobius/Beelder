@@ -88,7 +88,7 @@ export default class CompileSCSSSchemeAction extends BaseAction {
     }
 
     private recompileFiles(resourceFile: ResourceListFile, fileCache: any) {
-        let compiledStylesheets = new Map<string, string>();
+        let compiledStylesheets: string[] = [];
 
         for(let resourceInfo of resourceFile) {
             let resourcePath = resourceInfo[0]
@@ -103,10 +103,10 @@ export default class CompileSCSSSchemeAction extends BaseAction {
                 compiledSource = BuildCache.getFileData(fileCache, resourcePath)
             }
 
-            compiledStylesheets.set(resourcePath, compiledSource);
+            compiledStylesheets.push(compiledSource);
         }
 
-        return Array.from(compiledStylesheets.values()).join("\n")
+        return compiledStylesheets.reverse().join("\n")
     }
 
     private compileCSS(resourceInfo: ResourceListEntry): string {

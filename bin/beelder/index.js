@@ -5005,7 +5005,7 @@ class CompileSCSSSchemeAction extends _baseScheme.default {
   }
 
   recompileFiles(resourceFile, fileCache) {
-    let compiledStylesheets = new Map();
+    let compiledStylesheets = [];
 
     for (let resourceInfo of resourceFile) {
       let resourcePath = resourceInfo[0]; // TODO: print error if file does not exist
@@ -5021,10 +5021,10 @@ class CompileSCSSSchemeAction extends _baseScheme.default {
         compiledSource = _buildCache.default.getFileData(fileCache, resourcePath);
       }
 
-      compiledStylesheets.set(resourcePath, compiledSource);
+      compiledStylesheets.push(compiledSource);
     }
 
-    return Array.from(compiledStylesheets.values()).join("\n");
+    return compiledStylesheets.reverse().join("\n");
   }
 
   compileCSS(resourceInfo) {
