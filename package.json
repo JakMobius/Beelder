@@ -1,6 +1,6 @@
 {
   "name": "beelder",
-  "version": "0.0.16",
+  "version": "0.0.17",
   "description": "TypeScript build system designed for browser games with a client-server architecture",
   "main": "bin/beelder/index.js",
   "scripts": {
@@ -17,7 +17,7 @@
     "browser-pack": "^6.1.0",
     "browser-resolve": "^2.0.0",
     "browserify-incremental": "^3.1.1",
-    "canvas": "^2.7.0",
+    "canvas": "^2.8.0",
     "chalk": "^4.1.0",
     "exorcist": "^2.0.0",
     "json5": "^2.2.0",
